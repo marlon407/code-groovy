@@ -71,7 +71,7 @@ function activate(context) {
         let dependecesCondition = (text) => { return (text.startsWith("def ") && text.endsWith("Service")); };
         return sortLines(activeEditor, dependecesCondition, false);
     });
-    // context.subscriptions.push(disposable2);
+    context.subscriptions.push(disposable2);
 }
 exports.activate = activate;
 function deactivate() {

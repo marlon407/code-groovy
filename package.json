@@ -20,6 +20,11 @@
         "onCommand:extension.organizeImports",
         "onCommand:extension.organizeDependences"
     ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/marlon407/code-groovy"
+    },
+
     "main": "./out/extension",
     "contributes": {
         "commands": [
