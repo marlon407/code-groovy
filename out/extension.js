@@ -7,12 +7,11 @@ function sortLines(textEditor, condition, addBlanksLines) {
     let firstImportLine;
     for (let i = 0; i <= textEditor.document.lineCount - 1; i++) {
         let text = textEditor.document.lineAt(i).text;
-        if (firstImportLine)
-            lines.push(text);
         if (condition(text.replace(/^\s\s*/, ''))) {
             if (firstImportLine == undefined)
                 firstImportLine = i;
             lastImportLine = i;
+            lines.push(text);
         }
     }
     if (lines.length == 0)
@@ -72,7 +71,7 @@ function activate(context) {
         let dependecesCondition = (text) => { return (text.startsWith("def ") && text.endsWith("Service")); };
         return sortLines(activeEditor, dependecesCondition, false);
     });
-    context.subscriptions.push(disposable2);
+    // context.subscriptions.push(disposable2);
 }
 exports.activate = activate;
 function deactivate() {

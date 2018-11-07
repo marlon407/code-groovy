@@ -5,7 +5,7 @@ Better groovy support for VSCode
 ## Features
 
 - Groovy organize imports
-- Groovy organize dependences
+- Groovy organize dependences (Coming Soon)
 
 ## Requirements
 

@@ -8,10 +8,10 @@ function sortLines(textEditor: vscode.TextEditor, condition: Function, addBlanks
     let firstImportLine : any;
     for (let i = 0; i <= textEditor.document.lineCount - 1; i++) {
       let text = textEditor.document.lineAt(i).text;
-        if (firstImportLine) lines.push(text);
         if (condition(text.replace(/^\s\s*/, ''))) {
           if (firstImportLine == undefined) firstImportLine = i
           lastImportLine = i;
+          lines.push(text);
         }
     }
 

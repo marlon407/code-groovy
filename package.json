@@ -10,7 +10,11 @@
     "categories": [
         "Programming Languages"
     ],
-    "keywords": ["groovy", "grails", "micronaut"],
+    "keywords": [
+        "groovy",
+        "grails",
+        "micronaut"
+    ],
     "icon": "groovy.png",
     "activationEvents": [
         "onCommand:extension.organizeImports",
