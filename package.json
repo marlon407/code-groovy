@@ -2,7 +2,7 @@
     "name": "code-groovy",
     "displayName": "code-groovy",
     "description": "Groovy support for VSCode",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "publisher": "marlon407",
     "engines": {
         "vscode": "^1.28.0"
@@ -24,7 +24,6 @@
         "type": "git",
         "url": "https://github.com/marlon407/code-groovy"
     },
-
     "main": "./out/extension",
     "contributes": {
         "commands": [
