@@ -2,7 +2,7 @@
     "name": "code-groovy",
     "displayName": "code-groovy",
     "description": "Groovy support for VSCode",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "publisher": "marlon407",
     "engines": {
         "vscode": "^1.28.0"
@@ -52,10 +52,10 @@
         ],
         "snippets": [
             {
-              "language": "groovy",
-              "path": "./snippets/groovy.json"
+                "language": "groovy",
+                "path": "./snippets/groovy.json"
             }
-          ]
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
