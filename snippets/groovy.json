@@ -1,0 +1,79 @@
+{
+    "newObject": {
+		"prefix": "new",
+		"body": [
+			"${1:Object} ${2:foo} = new ${1:Object}();"
+		],
+		"description": "Create new Object"
+    },
+    "domainClass": {
+		"prefix": "class",
+		"body": [
+			"package ${1}",
+            "",
+            "class ${2} ${3:extends BaseEntity} {",
+            "",
+            "\tstatic constraints = {",
+                "\t",
+            "\t}",
+            "",
+            "\t static namedQueries = {",
+            "\t\tquery { search ->",
+            "\t\t\tif (!Boolean.valueOf(search.includeDeleted)) {",
+            "\t\t\t\teq('deleted', false)",
+            "\t\t\t}",
+            "",
+            "\t\t\tif (search.containsKey('id')) {",
+            "\t\t\t\teq('id', search.id)",
+            "\t\t\t}",
+            "\t\t}",
+            "\t}",
+            "}"
+		],
+		"description": "New domain class"
+    },
+    "controllerClass": {
+		"prefix": "class",
+		"body": [
+			"package ${1}",
+            "",
+            "import grails.converters.JSON",
+            "import grails.plugin.springsecurity.annotation.Secured",
+            "import grails.plugin.springsecurity.SpringSecurityUtils",
+            "",
+            "${2:@Secured(['ROLE_USER'])}",
+            "class ${3}Controller ${4:extends BaseController} {",
+            "",
+            "\tdef index() {",
+                "\t",
+            "\t}",
+            "",
+            "\tdef show() {",
+                "\t",
+            "\t}",
+            "",
+            "\tdef save() {",
+                "\t",
+            "\t}",
+            "",
+            "\tdef delete() {",
+                "\t",
+            "\t}",
+            "",
+            "}"
+		],
+		"description": "New domain class"
+	},
+    "serviceClass": {
+		"prefix": "class",
+		"body": [
+			"package ${1}",
+            "",
+            "${2:@Transactional}",
+            "class ${3}Service {",
+            "\t",
+            "}"
+		],
+		"description": "New service class"
+	}
+}

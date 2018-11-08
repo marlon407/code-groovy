@@ -1,4 +1,4 @@
-# code-groovy README
+# Language support for Groovy &trade; for Visual Studio Code
 
 Better groovy support for VSCode 
 
@@ -6,6 +6,7 @@ Better groovy support for VSCode
 
 - Groovy organize imports
 - Groovy organize dependences (Coming Soon)
+- Code snippets
 
 ## Requirements
 
@@ -15,13 +16,6 @@ Better groovy support for VSCode
 
 ## Known Issues
 
-
-## Release Notes
-
-
-### 0.0.1
-
-Initial commit and organizers implementation
 
 ### Disclaimer 
 
