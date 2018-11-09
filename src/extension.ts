@@ -1,6 +1,7 @@
 'use strict';
 
 import * as vscode from 'vscode';
+import GroovyDocumentSymbolProvider from './groovy_document_symbol_provider';
 
 function sortLines(textEditor: vscode.TextEditor, condition: Function, addBlanksLines: boolean) {
     const lines: string[] = [];
@@ -63,7 +64,7 @@ function addBlanks(lines: string[]) {
 
 export function activate(context: vscode.ExtensionContext) {
 
-    let disposable = vscode.commands.registerCommand('extension.organizeImports', function () {
+    let disposable: vscode.Disposable = vscode.commands.registerCommand('extension.organizeImports', function () {
         let activeEditor = vscode.window.activeTextEditor;
         if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== 'groovy') {
             return;
@@ -75,7 +76,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(disposable);
 
-    let disposable2 = vscode.commands.registerCommand('extension.organizeDependences', function () {
+    let disposable2: vscode.Disposable = vscode.commands.registerCommand('extension.organizeDependences', function () {
         let activeEditor = vscode.window.activeTextEditor;
         if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== 'groovy') {
             return;
@@ -86,6 +87,15 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     context.subscriptions.push(disposable2);
+
+    let selector: vscode.DocumentSelector = {
+      language: 'groovy',
+      scheme: 'file'
+    };
+    
+    context.subscriptions.push(
+      vscode.languages.registerDocumentSymbolProvider(
+        selector, new GroovyDocumentSymbolProvider()));
 }
 
 export function deactivate() {

@@ -13,12 +13,14 @@
     "keywords": [
         "groovy",
         "grails",
-        "micronaut"
+        "micronaut",
+        "search code"
     ],
     "icon": "groovy.png",
     "activationEvents": [
         "onCommand:extension.organizeImports",
-        "onCommand:extension.organizeDependences"
+        "onCommand:extension.organizeDependences",
+        "onLanguage:groovy"
     ],
     "repository": {
         "type": "git",

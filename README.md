@@ -1,22 +1,33 @@
-# Language support for Groovy &trade; for Visual Studio Code
+Language support for Groovy &trade; for Visual Studio Code
+=====================
 
 Better groovy support for VSCode 
 
-## Features
+Features
+===============
 
 - Groovy organize imports
-- Groovy organize dependences (Coming Soon)
-- Code snippets
+- Groovy code snippets
+- Groovy symbol support
 
-## Requirements
+Requirements
+===============
 
+Extension Settings
+===============
 
-## Extension Settings
+Known Issues
+===============
 
+Contributing
+===============
 
-## Known Issues
+This is an open source project open to anyone. Contributions are extremely welcome!
 
+Report any problems you face to the [project](https://github.com/marlon407/code-groovy/issues).
 
-### Disclaimer 
+Disclaimer 
+===============
 
-Lots of help from [vscode-sort-lines](https://github.com/Tyriar/vscode-sort-lines/)
+Lots of help from [vscode-sort-lines](https://github.com/Tyriar/vscode-sort-lines/).
+Groovy symbol based on [vscode-groovy](https://gitlab.com/awl/vscode-grails).

@@ -1,6 +1,7 @@
 'use strict';
 Object.defineProperty(exports, "__esModule", { value: true });
 const vscode = require("vscode");
+const groovy_document_symbol_provider_1 = require("./groovy_document_symbol_provider");
 function sortLines(textEditor, condition, addBlanksLines) {
     const lines = [];
     let lastImportLine;
@@ -72,6 +73,11 @@ function activate(context) {
         return sortLines(activeEditor, dependecesCondition, false);
     });
     context.subscriptions.push(disposable2);
+    let selector = {
+        language: 'groovy',
+        scheme: 'file'
+    };
+    context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(selector, new groovy_document_symbol_provider_1.default()));
 }
 exports.activate = activate;
 function deactivate() {
