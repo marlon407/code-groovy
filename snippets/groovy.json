@@ -69,6 +69,8 @@
 		"body": [
 			"package ${1}",
             "",
+            "import grails.transaction.Transactional",
+            "",
             "${2:@Transactional}",
             "class ${3}Service {",
             "\t",

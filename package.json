@@ -18,8 +18,8 @@
     ],
     "icon": "groovy.png",
     "activationEvents": [
-        "onCommand:extension.organizeImports",
-        "onCommand:extension.organizeDependences",
+        "onCommand:cgroovy.organizeImports",
+        "onCommand:cgroovy.organizeDependences",
         "onLanguage:groovy"
     ],
     "repository": {
@@ -30,23 +30,23 @@
     "contributes": {
         "commands": [
             {
-                "command": "extension.organizeImports",
+                "command": "cgroovy.organizeImports",
                 "title": "Organize imports"
             },
             {
-                "command": "extension.organizeDependences",
+                "command": "cgroovy.organizeDependences",
                 "title": "Organize dependences"
             }
         ],
         "keybindings": [
             {
-                "command": "extension.organizeImports",
+                "command": "cgroovy.organizeImports",
                 "key": "ctrl+shift+o",
                 "mac": "cmd+shift+o",
                 "when": ""
             },
             {
-                "command": "extension.organizeDependences",
+                "command": "cgroovy.organizeDependences",
                 "key": "ctrl+shift+d",
                 "mac": "cmd+shift+d",
                 "when": ""

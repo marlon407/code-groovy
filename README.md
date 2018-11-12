@@ -3,6 +3,8 @@ Language support for Groovy &trade; for Visual Studio Code
 
 Better groovy support for VSCode 
 
+![Screenshot](code-groovy-0.0.5.gif)
+
 Features
 ===============
 
