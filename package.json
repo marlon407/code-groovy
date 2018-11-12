@@ -2,7 +2,7 @@
     "name": "code-groovy",
     "displayName": "code-groovy",
     "description": "Groovy support for VSCode",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "publisher": "marlon407",
     "engines": {
         "vscode": "^1.28.0"
