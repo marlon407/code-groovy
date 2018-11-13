@@ -9,6 +9,7 @@ Features
 ===============
 
 - Groovy organize imports
+- Groovy organize service injections
 - Groovy code snippets
 - Groovy symbol support
 
@@ -32,4 +33,5 @@ Disclaimer
 ===============
 
 Lots of help from [vscode-sort-lines](https://github.com/Tyriar/vscode-sort-lines/).
-Groovy symbol based on [vscode-groovy](https://gitlab.com/awl/vscode-grails).
+
+Groovy symbol support based on [vscode-groovy](https://gitlab.com/awl/vscode-grails).
