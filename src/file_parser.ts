@@ -17,12 +17,11 @@
 //   }
 // }
 
-import { CancellationToken, TextDocument } from 'vscode';
-
 export default class FileParser {
   fileText: any;
   lines :any;
-  constructor(fileText: any, token: CancellationToken, document: TextDocument) {
+  first_line :any;
+  constructor(fileText: any) {
     this.fileText = fileText
     this.lines    = this.fileText.split("\n")
   }
@@ -49,16 +48,36 @@ export default class FileParser {
       block.end_line && _.includes(["def", "class"], block.type)
     ))
   }
+
+  dependences() {
+	var blocks: any = [];
+    this.lines.forEach( (line: any, index: any) =>{
+      let lineParse = new LineParse(line);
+      if (lineParse.isDependenceInjection()){
+		if (!this.first_line) this.first_line = index; 
+        var block = { 
+          line: line, 
+          start_line: index,
+        }
+        blocks = [...blocks, block]
+      } 
+	});
+	return blocks;
+  }
 }
 
 // const blockTypes = ["class", "def"]
 const functionRegEx = /(def|public|private|protected|boolean|double|string|int|long|integer|void)+\s+.*\s*[a-z]*\(.*\)*\{/i;
+const dependeceRegEx = /def+\s+.*Service/i;
 class LineParse{
   line: any;
   constructor(line: any) { this.line = line }
   isAClassBlock() { return /class /.test(this.line) }
   isAFunctionBlock() { 
     return this.line.match(functionRegEx);
+  }
+  isDependenceInjection() { 
+    return this.line.match(dependeceRegEx);
   }
   isBlock() {
     return (

@@ -7,7 +7,7 @@ export default class GoDocumentSymbolProvider implements vscode.DocumentSymbolPr
       document: vscode.TextDocument, token: vscode.CancellationToken):
       Thenable<vscode.SymbolInformation[]> {
         let fileText = document.getText()
-        let symbol_informations = new FileParser(fileText, token, document).symbol_informations()
+        let symbol_informations = new FileParser(fileText).symbol_informations()
         return symbol_informations.map((symbol_information: any) => {
           const { name, type, start_line, end_line} = symbol_information
           const symbolKinds: any = {
