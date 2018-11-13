@@ -1,11 +1,31 @@
 import * as vscode from 'vscode';
 
+import FileParser from './file_parser';
+
 export const sortDependeces = () => {
     let activeEditor = vscode.window.activeTextEditor;
     if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== 'groovy') return;
 
-    const dependecesCondition = (text: string) => { return (text.startsWith("def ") && text.endsWith("Service")) };
-    return sortLines(activeEditor, dependecesCondition, false);
+    let fileText = activeEditor.document.getText()
+    activeEditor.edit(editBuilder => {
+      let deps = new FileParser(fileText).dependences()
+      const lines: string[] = [];
+      deps.map((dep: any) => {
+        if (!activeEditor) return;
+        const range = new vscode.Range(dep.start_line, 0, dep.start_line + 1, 0);
+        editBuilder.delete(range);
+        lines.push(dep.line);
+      });
+
+      lines.sort();
+
+      removeBlanks(lines);
+      removeDuplicates(lines);
+      lines.push("");
+
+      const position = new vscode.Position(deps[0].start_line, 0);
+      editBuilder.insert(position, lines.join('\n'));
+    });
 }
 
 export const sortImports = () => {
@@ -21,7 +41,7 @@ function sortLines(textEditor: vscode.TextEditor, condition: Function, addBlanks
     let lastImportLine : any;
     let firstImportLine : any;
     for (let i = 0; i <= textEditor.document.lineCount - 1; i++) {
-      let text = textEditor.document.lineAt(i).text;
+        let text = textEditor.document.lineAt(i).text;
         if (condition(text.replace(/^\s\s*/, ''))) {
           if (firstImportLine == undefined) firstImportLine = i
           lastImportLine = i;
