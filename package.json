@@ -59,15 +59,14 @@
                 "path": "./snippets/groovy.json"
             },
             {
-                "language": "Groovy Server Pages",
+                "language": "gsp",
                 "path": "./snippets/gsp.json"
             }
         ],
         "languages": [
             {
-                "id": "Groovy Server Pages",
+                "id": "gsp",
                 "aliases": [
-                    "gsp",
                     "Groovy Server Pages"
                 ],
                 "extensions": [
@@ -78,7 +77,7 @@
         ],
         "grammars": [
             {
-                "language": "Groovy Server Pages",
+                "language": "gsp",
                 "scopeName": "text.html.gsp",
                 "path": "./syntaxes/gsp.tmLanguage",
                 "embeddedLanguages": {
