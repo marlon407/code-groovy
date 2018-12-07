@@ -20,7 +20,8 @@
     "activationEvents": [
         "onCommand:cgroovy.organizeImports",
         "onCommand:cgroovy.organizeDependences",
-        "onLanguage:groovy"
+        "onLanguage:groovy",
+        "onLanguage:gsp"
     ],
     "repository": {
         "type": "git",
@@ -56,8 +57,37 @@
             {
                 "language": "groovy",
                 "path": "./snippets/groovy.json"
+            },
+            {
+                "language": "gsp",
+                "path": "./snippets/gsp.json"
             }
-        ]
+        ],
+        "languages": [
+            {
+                "id": "gsp",
+                "aliases": [
+                  "gsp",
+                  "Groovy Server Pages"
+                ],
+                "extensions": [
+                  ".gsp"
+                ],
+                "configuration": "./language-configuration-gsp.json"
+              }
+        ],
+        "grammars": [            
+            {
+              "language": "gsp",
+              "scopeName": "text.html.gsp",
+              "path": "./syntaxes/gsp.tmLanguage",
+              "embeddedLanguages": {
+                "source.css": "css",
+                "source.js": "javascript",
+                "source.groovy": "groovy"
+              }
+            }
+          ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",

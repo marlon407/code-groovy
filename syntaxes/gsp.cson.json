@@ -1,0 +1,127 @@
+{
+	"information_for_contributors": [
+		"This file has been converted from https://github.com/mathifonseca/atom-grails/blob/master/grammars/gsp.cson",
+		"If you want to provide a fix or improvement, please create a pull request against the original repository.",
+		"Once accepted there, we are happy to receive an update request."
+	],
+	"version": "",
+	"name": "Grails Server Page",
+	"scopeName": "text.html.gsp",
+	"fileTypes": [
+		"gsp"
+	],
+	"injections": {
+		"text.html.gsp - (meta.embedded.block.gsp | meta.embedded.line.gsp | meta.tag | comment), meta.tag string.quoted": {
+			"patterns": [
+				{
+                    "begin": "<%--",
+                    "beginCaptures": {
+                      "0": {
+                        "name": "punctuation.definition.comment.gsp"
+                      }
+                    },
+                    "endCaptures": "--%>",
+                    "name": "comment.block.gsp"
+                },
+				{
+                    "begin": "%{--",
+                    "beginCaptures": {
+                      "0": {
+                        "name": "punctuation.definition.comment.gsp"
+                      }
+                    },
+                    "endCaptures": "--}%",
+                    "name": "alternative.comment.block.gsp"
+                },
+				{
+					"begin": "<%+(?!>)=?",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.section.embedded.begin.groovy"
+						}
+					},
+					"end": "%>",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.section.embedded.end.groovy"
+						}
+                    },
+                    "name": "source.groovy",
+					"patterns": [
+						{
+							"include": "source.groovy"
+						}
+					]
+				},
+				{
+					"include": "#embedded-groovy"
+				}
+			]
+		}
+	},
+	"patterns": [
+		{
+			"include": "text.html.basic"
+		}
+	],
+	"repository": {
+		"embedded-groovy": {
+			"patterns": [
+				{
+					"begin": "\\$\\{",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.section.embedded.groovy"
+						}
+					},
+					"end": "\\}",
+                    "name": "source.groovy.embedded.html.grails",
+                    "patterns": [
+                        {
+                          "include": "source.groovy"
+                        }
+                      ]
+				},
+				{
+					"begin": "<%@",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.section.embedded.groovy"
+						}
+					},
+					"end": "%>",
+                    "name": "source.groovy.embedded.html.grails",
+                    "patterns": [
+                        {
+                          "include": "source.groovy"
+                        }
+                      ]
+				}
+			]
+		},
+		"string-double-quoted": {
+			"patterns": [
+				{
+					"begin": "\"",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.html.grails"
+						}
+					},
+					"end": "\"",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.end.html.grails"
+						}
+					},
+					"name": "string.quoted.double.html.grails",
+					"patterns": [
+						{
+							"include": "#embedded-groovy"
+						}
+					]
+				}
+			]
+		}
+	}
+}

@@ -1,0 +1,46 @@
+{
+    "if": {
+        "prefix": "g.if",
+        "body": [
+            "<g:if test=\"${ $1 }\">",
+            "   $2",
+            "</g:if>"
+        ],
+        "description": "if .. end"
+    },
+    "else": {
+        "prefix": "g.else",
+        "body": [
+            "<g:else>",
+            "   $2",
+            "</g:else>"
+        ],
+        "description": "else"
+    },
+    "elsif": {
+        "prefix": "g.elsif",
+        "body": [
+            "<g:elseif test=\"${ ${1} }\">",
+            "   $2",
+            "</g:elseif>"
+        ],
+        "description": "elsif"
+    },
+
+    "each": {
+        "prefix": "g.each",
+        "body": [
+            "<g:each var=\"${1:item}\" in=\"${ ${2:items} }\">",
+            "   $3",
+            "</g:each>"
+        ],
+        "description": "each do"
+    },
+    "render": {
+        "prefix": "g.render",
+        "body": [
+            "<g:render template=\"$1\" model=\"['$2':$2]\" />"
+        ],
+        "description": "render a template"
+    }
+}
