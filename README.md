@@ -12,6 +12,8 @@ Features
 - Groovy organize service injections
 - Groovy code snippets
 - Groovy symbol support
+- GSP syntax
+- GSP snippets
 
 Requirements
 ===============
