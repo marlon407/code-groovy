@@ -2,7 +2,7 @@
     "name": "code-groovy",
     "displayName": "code-groovy",
     "description": "Groovy support for VSCode",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "publisher": "marlon407",
     "engines": {
         "vscode": "^1.28.0"
@@ -67,27 +67,27 @@
             {
                 "id": "Groovy Server Pages",
                 "aliases": [
-                  "gsp",
-                  "Groovy Server Pages"
+                    "gsp",
+                    "Groovy Server Pages"
                 ],
                 "extensions": [
-                  ".gsp"
+                    ".gsp"
                 ],
                 "configuration": "./language-configuration-gsp.json"
-              }
-        ],
-        "grammars": [            
-            {
-              "language": "Groovy Server Pages",
-              "scopeName": "text.html.gsp",
-              "path": "./syntaxes/gsp.tmLanguage",
-              "embeddedLanguages": {
-                "source.css": "css",
-                "source.js": "javascript",
-                "source.groovy": "groovy"
-              }
             }
-          ]
+        ],
+        "grammars": [
+            {
+                "language": "Groovy Server Pages",
+                "scopeName": "text.html.gsp",
+                "path": "./syntaxes/gsp.tmLanguage",
+                "embeddedLanguages": {
+                    "source.css": "css",
+                    "source.js": "javascript",
+                    "source.groovy": "groovy"
+                }
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
