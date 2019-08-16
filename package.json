@@ -44,13 +44,13 @@
                 "command": "cgroovy.organizeImports",
                 "key": "ctrl+shift+o",
                 "mac": "cmd+shift+o",
-                "when": ""
+                "when": "editorLangId =~ /groovy|gsp/"
             },
             {
                 "command": "cgroovy.organizeDependences",
                 "key": "ctrl+shift+d",
                 "mac": "cmd+shift+d",
-                "when": ""
+                "when": "editorLangId =~ /groovy|gsp/"
             }
         ],
         "snippets": [
@@ -96,10 +96,10 @@
         "test": "npm run compile && node ./node_modules/vscode/bin/test"
     },
     "devDependencies": {
-        "typescript": "^2.6.1",
-        "vscode": "^1.1.21",
-        "tslint": "^5.8.0",
+        "@types/mocha": "^2.2.42",
         "@types/node": "^8.10.25",
-        "@types/mocha": "^2.2.42"
+        "tslint": "^5.8.0",
+        "typescript": "^2.6.1",
+        "vscode": "^1.1.36"
     }
 }
