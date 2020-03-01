@@ -73,6 +73,10 @@
                     ".gsp"
                 ],
                 "configuration": "./language-configuration-gsp.json"
+            },
+            {
+                "id": "groovy",
+                "extensions": [".groovy"]
             }
         ],
         "grammars": [
@@ -85,6 +89,11 @@
                     "source.js": "javascript",
                     "source.groovy": "groovy"
                 }
+            }, 
+            {
+                "language": "groovy",
+                "scopeName": "source.groovy",
+                "path": "./syntaxes/groovy.json"
             }
         ]
     },
