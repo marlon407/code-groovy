@@ -1,0 +1,401 @@
+{
+  "version": 1.1,
+  "tags": [
+    {
+      "name": "g:if",
+      "description": "Renders the body when the Groovy test expression evaluates to true.",
+      "attributes": [
+        {
+          "name": "test",
+          "description": "Boolean Groovy expression."
+        },
+        {
+          "name": "env",
+          "description": "Optional environment name(s) that must match for the body to render."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:if",
+          "url": "https://docs.grails.org/latest/ref/Tags/if.html"
+        }
+      ]
+    },
+    {
+      "name": "g:else",
+      "description": "Renders the body when the preceding g:if / g:elseif did not match.",
+      "attributes": [],
+      "references": [
+        {
+          "name": "Grails g:else",
+          "url": "https://docs.grails.org/latest/ref/Tags/else.html"
+        }
+      ]
+    },
+    {
+      "name": "g:elseif",
+      "description": "Renders the body when the previous g:if failed and this test is true.",
+      "attributes": [
+        {
+          "name": "test",
+          "description": "Boolean Groovy expression."
+        },
+        {
+          "name": "env",
+          "description": "Optional environment name(s) that must match for the body to render."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:elseif",
+          "url": "https://docs.grails.org/latest/ref/Tags/elseif.html"
+        }
+      ]
+    },
+    {
+      "name": "g:each",
+      "description": "Iterates over a collection and renders the body for each item.",
+      "attributes": [
+        {
+          "name": "in",
+          "description": "Collection or map to iterate."
+        },
+        {
+          "name": "var",
+          "description": "Name of the loop variable."
+        },
+        {
+          "name": "status",
+          "description": "Optional name of the loop index variable."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:each",
+          "url": "https://docs.grails.org/latest/ref/Tags/each.html"
+        }
+      ]
+    },
+    {
+      "name": "g:set",
+      "description": "Sets a variable in the page scope, or injects a Spring bean.",
+      "attributes": [
+        {
+          "name": "var",
+          "description": "Variable name to create."
+        },
+        {
+          "name": "value",
+          "description": "Value assigned to the variable."
+        },
+        {
+          "name": "bean",
+          "description": "Spring bean name to inject into the variable."
+        },
+        {
+          "name": "scope",
+          "description": "Scope for the variable (page, request, flash, session, application)."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:set",
+          "url": "https://docs.grails.org/latest/ref/Tags/set.html"
+        }
+      ]
+    },
+    {
+      "name": "g:render",
+      "description": "Renders a template, optionally with a model.",
+      "attributes": [
+        {
+          "name": "template",
+          "description": "Template name (without the leading underscore)."
+        },
+        {
+          "name": "model",
+          "description": "Map of values available inside the template."
+        },
+        {
+          "name": "collection",
+          "description": "Collection that renders the template once per item."
+        },
+        {
+          "name": "var",
+          "description": "Variable name used when rendering a collection."
+        },
+        {
+          "name": "contextPath",
+          "description": "Optional context path override."
+        },
+        {
+          "name": "plugin",
+          "description": "Plugin that owns the template."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:render",
+          "url": "https://docs.grails.org/latest/ref/Tags/render.html"
+        }
+      ]
+    },
+    {
+      "name": "g:link",
+      "description": "Creates an HTML anchor with a Grails-generated URL.",
+      "attributes": [
+        {
+          "name": "controller",
+          "description": "Target controller."
+        },
+        {
+          "name": "action",
+          "description": "Target action."
+        },
+        {
+          "name": "id",
+          "description": "Resource id."
+        },
+        {
+          "name": "params",
+          "description": "Map of request parameters."
+        },
+        {
+          "name": "mapping",
+          "description": "Named URL mapping."
+        },
+        {
+          "name": "absolute",
+          "description": "Whether to generate an absolute URL."
+        },
+        {
+          "name": "base",
+          "description": "Base URL used with absolute links."
+        },
+        {
+          "name": "uri",
+          "description": "Raw URI instead of controller/action."
+        },
+        {
+          "name": "url",
+          "description": "Map-style URL definition."
+        },
+        {
+          "name": "elementId",
+          "description": "id attribute of the generated anchor."
+        },
+        {
+          "name": "fragment",
+          "description": "URL fragment / hash."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:link",
+          "url": "https://docs.grails.org/latest/ref/Tags/link.html"
+        }
+      ]
+    },
+    {
+      "name": "g:form",
+      "description": "Creates an HTML form that posts to a Grails controller action.",
+      "attributes": [
+        {
+          "name": "controller",
+          "description": "Target controller."
+        },
+        {
+          "name": "action",
+          "description": "Target action."
+        },
+        {
+          "name": "id",
+          "description": "Resource id."
+        },
+        {
+          "name": "params",
+          "description": "Map of request parameters."
+        },
+        {
+          "name": "method",
+          "description": "HTTP method.",
+          "values": [
+            { "name": "post" },
+            { "name": "get" }
+          ]
+        },
+        {
+          "name": "url",
+          "description": "Map-style URL definition."
+        },
+        {
+          "name": "name",
+          "description": "Form name attribute."
+        },
+        {
+          "name": "useToken",
+          "description": "Whether to include a CSRF synchronizer token."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:form",
+          "url": "https://docs.grails.org/latest/ref/Tags/form.html"
+        }
+      ]
+    },
+    {
+      "name": "g:message",
+      "description": "Resolves an i18n message code from messages.properties.",
+      "attributes": [
+        {
+          "name": "code",
+          "description": "Message code to look up."
+        },
+        {
+          "name": "args",
+          "description": "List of arguments interpolated into the message."
+        },
+        {
+          "name": "default",
+          "description": "Fallback text when the code is missing."
+        },
+        {
+          "name": "locale",
+          "description": "Locale used for resolution."
+        },
+        {
+          "name": "encodeAs",
+          "description": "Codec used when writing the message."
+        }
+      ],
+      "references": [
+        {
+          "name": "Grails g:message",
+          "url": "https://docs.grails.org/latest/ref/Tags/message.html"
+        }
+      ]
+    },
+    {
+      "name": "asset:stylesheet",
+      "description": "Includes a stylesheet processed by the Asset Pipeline plugin.",
+      "attributes": [
+        {
+          "name": "src",
+          "description": "Asset path, for example application.css."
+        },
+        {
+          "name": "media",
+          "description": "CSS media query attribute."
+        },
+        {
+          "name": "attrs",
+          "description": "Map of extra attributes for the link tag."
+        }
+      ],
+      "references": [
+        {
+          "name": "Asset Pipeline stylesheet",
+          "url": "https://github.com/bertramdev/asset-pipeline"
+        }
+      ]
+    },
+    {
+      "name": "asset:javascript",
+      "description": "Includes a JavaScript asset processed by the Asset Pipeline plugin.",
+      "attributes": [
+        {
+          "name": "src",
+          "description": "Asset path, for example application.js."
+        },
+        {
+          "name": "defer",
+          "description": "Whether the script should defer loading."
+        },
+        {
+          "name": "async",
+          "description": "Whether the script should load asynchronously."
+        },
+        {
+          "name": "attrs",
+          "description": "Map of extra attributes for the script tag."
+        }
+      ],
+      "references": [
+        {
+          "name": "Asset Pipeline javascript",
+          "url": "https://github.com/bertramdev/asset-pipeline"
+        }
+      ]
+    },
+    {
+      "name": "asset:image",
+      "description": "Renders an img tag for an Asset Pipeline image.",
+      "attributes": [
+        {
+          "name": "src",
+          "description": "Image asset path."
+        },
+        {
+          "name": "width",
+          "description": "Image width."
+        },
+        {
+          "name": "height",
+          "description": "Image height."
+        },
+        {
+          "name": "alt",
+          "description": "Alternative text."
+        },
+        {
+          "name": "attrs",
+          "description": "Map of extra attributes for the img tag."
+        }
+      ],
+      "references": [
+        {
+          "name": "Asset Pipeline image",
+          "url": "https://github.com/bertramdev/asset-pipeline"
+        }
+      ]
+    },
+    {
+      "name": "asset:link",
+      "description": "Generates a link element for an asset (favicon, alternate styles, etc.), with cache-digested paths in production.",
+      "attributes": [
+        {
+          "name": "href",
+          "description": "Path to the asset inside grails-app/assets."
+        },
+        {
+          "name": "rel",
+          "description": "Value of the rel attribute on the generated link element.",
+          "values": [
+            { "name": "stylesheet" },
+            { "name": "shortcut icon" },
+            { "name": "icon" },
+            { "name": "apple-touch-icon" },
+            { "name": "manifest" }
+          ]
+        },
+        {
+          "name": "type",
+          "description": "Value of the type attribute on the generated link element.",
+          "values": [
+            { "name": "text/css" },
+            { "name": "image/x-icon" },
+            { "name": "image/png" },
+            { "name": "application/manifest+json" }
+          ]
+        }
+      ],
+      "references": [
+        {
+          "name": "Asset Pipeline link",
+          "url": "https://bertramdev.github.io/grails-asset-pipeline/ref/Tags/link.html"
+        }
+      ]
+    }
+  ]
+}
