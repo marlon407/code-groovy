@@ -1,67 +1,117 @@
 {
     "if": {
-        "prefix": ["g.if", "if"],
+        "prefix": ["g.if", "g:if"],
         "body": [
             "<g:if test=\"${ $1 }\">",
             "   $2",
             "</g:if>"
         ],
-        "description": "if .. end"
+        "description": "Grails g:if"
     },
     "else": {
-        "prefix": ["g.else", "else"],
+        "prefix": ["g.else", "g:else"],
         "body": [
             "<g:else>",
-            "   $2",
+            "   $1",
             "</g:else>"
         ],
-        "description": "else"
+        "description": "Grails g:else"
     },
     "elsif": {
-        "prefix": ["g.elseif", "elseif"],
+        "prefix": ["g.elseif", "g:elseif"],
         "body": [
-            "<g:elseif test=\"${ ${1} }\">",
+            "<g:elseif test=\"${ $1 }\">",
             "   $2",
             "</g:elseif>"
         ],
-        "description": "elsif"
+        "description": "Grails g:elseif"
     },
-
     "each": {
-        "prefix": ["g.each", "each"],
+        "prefix": ["g.each", "g:each"],
         "body": [
             "<g:each var=\"${1:item}\" in=\"${ ${2:items} }\">",
             "   $3",
             "</g:each>"
         ],
-        "description": "each do"
+        "description": "Grails g:each"
     },
     "render": {
-        "prefix": ["g.render", "render"],
+        "prefix": ["g.render", "g:render"],
         "body": [
             "<g:render template=\"$1\" model=\"['$2':$2]\" />"
         ],
-        "description": "render a template"
+        "description": "Grails g:render"
     },
     "import": {
-        "prefix": ["g.import", "import"],
+        "prefix": ["g.import", "g:import"],
         "body": [
             "<%@ page import=\"$1\" %>"
         ],
-        "description": "import"
+        "description": "GSP page import"
     },
     "service": {
-        "prefix": ["g.service", "service"],
+        "prefix": ["g.service", "g:service"],
         "body": [
             "<g:set var=\"$1\" bean=\"$1\"/>"
         ],
-        "description": "inject a service"
+        "description": "Inject a Spring bean via g:set"
     },
     "set": {
-        "prefix": ["g.set", "set"],
+        "prefix": ["g.set", "g:set"],
         "body": [
             "<g:set var=\"$1\" value=\"$2\"/>"
         ],
-        "description": "set a var"
+        "description": "Grails g:set"
+    },
+    "link": {
+        "prefix": ["g.link", "g:link"],
+        "body": [
+            "<g:link controller=\"$1\" action=\"$2\">$3</g:link>"
+        ],
+        "description": "Grails g:link"
+    },
+    "form": {
+        "prefix": ["g.form", "g:form"],
+        "body": [
+            "<g:form controller=\"$1\" action=\"$2\">",
+            "   $3",
+            "</g:form>"
+        ],
+        "description": "Grails g:form"
+    },
+    "message": {
+        "prefix": ["g.message", "g:message"],
+        "body": [
+            "<g:message code=\"$1\"/>"
+        ],
+        "description": "Grails g:message"
+    },
+    "assetStylesheet": {
+        "prefix": ["asset.stylesheet", "asset:stylesheet"],
+        "body": [
+            "<asset:stylesheet src=\"${1:application.css}\"/>"
+        ],
+        "description": "Asset Pipeline stylesheet"
+    },
+    "assetJavascript": {
+        "prefix": ["asset.javascript", "asset:javascript"],
+        "body": [
+            "<asset:javascript src=\"${1:application.js}\"/>"
+        ],
+        "description": "Asset Pipeline javascript"
+    },
+    "assetImage": {
+        "prefix": ["asset.image", "asset:image"],
+        "body": [
+            "<asset:image src=\"$1\" alt=\"$2\"/>"
+        ],
+        "description": "Asset Pipeline image"
+    },
+    "assetLink": {
+        "prefix": ["asset.link", "asset:link"],
+        "body": [
+            "<asset:link rel=\"${1:shortcut icon}\" href=\"${2:favicon.ico}\" type=\"${3:image/x-icon}\"/>"
+        ],
+        "description": "Asset Pipeline link (favicon, etc.)"
     }
 }
