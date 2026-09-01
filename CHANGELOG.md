@@ -4,6 +4,9 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+- Enable HTML Emmet and HTML language features in `.gsp` files, while keeping Grails GSP snippets
+- Add IntelliSense/hover hints for common Grails `g:` and Asset Pipeline `asset:` tags in `.gsp`
+- Fix GSP snippets so `g:if` / `asset:stylesheet` expand cleanly (no leftover `g:` prefix) and add asset snippets
 
 ## [0.1.3]
 - Remove unused tslint and pin patched transitive dependencies (npm audit: 0)

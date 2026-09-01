@@ -51,6 +51,15 @@ function activate(context) {
     ];
     commands.forEach(command => context.subscriptions.push(command));
     languages.forEach(language => context.subscriptions.push(language));
+    ensureGspEmmetMapping();
+}
+function ensureGspEmmetMapping() {
+    const emmet = vscode.workspace.getConfiguration('emmet');
+    const include = emmet.get('includeLanguages') ?? {};
+    if (include.gsp === 'html') {
+        return;
+    }
+    emmet.update('includeLanguages', { ...include, gsp: 'html' }, vscode.ConfigurationTarget.Global);
 }
 function deactivate() {
 }

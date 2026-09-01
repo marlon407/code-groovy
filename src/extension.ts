@@ -17,7 +17,16 @@ export function activate(context: vscode.ExtensionContext) {
 
     commands.forEach(command => context.subscriptions.push(command));
     languages.forEach(language => context.subscriptions.push(language));
-      
+    ensureGspEmmetMapping();
+}
+
+function ensureGspEmmetMapping(): void {
+    const emmet = vscode.workspace.getConfiguration('emmet');
+    const include = emmet.get<Record<string, string>>('includeLanguages') ?? {};
+    if (include.gsp === 'html') {
+        return;
+    }
+    emmet.update('includeLanguages', { ...include, gsp: 'html' }, vscode.ConfigurationTarget.Global);
 }
 
 export function deactivate() {
