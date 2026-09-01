@@ -37,7 +37,8 @@
             "[gsp]": {
                 "editor.snippetSuggestions": "top",
                 "emmet.triggerExpansionOnTab": false,
-                "emmet.showAbbreviationSuggestions": true
+                "emmet.showAbbreviationSuggestions": false,
+                "emmet.showExpandedAbbreviation": "never"
             }
         },
         "commands": [

@@ -1,10 +1,9 @@
 import * as vscode from 'vscode';
 
 /**
- * Emmet treats `g.each` as tag + class (`<g class="each">`).
- * Coexist by keeping Emmet for HTML abbreviations, but:
- * - not expanding on Tab (user accepts a suggestion instead)
- * - ranking language snippets above Emmet abbreviations
+ * Emmet treats `g.each` / `demoUI.foo` as `tag.class`, which fights Grails syntax.
+ * Keep `gsp` mapped to HTML so "Emmet: Expand Abbreviation" still works for markup,
+ * but hide Emmet from the suggest widget and disable expand-on-Tab in `.gsp`.
  */
 export async function ensureGspEmmetCoexistence(): Promise<void> {
 	const emmet = vscode.workspace.getConfiguration('emmet');
@@ -18,6 +17,8 @@ export async function ensureGspEmmetCoexistence(): Promise<void> {
 	}
 
 	const emmetGsp = vscode.workspace.getConfiguration('emmet', { languageId: 'gsp' });
+	const editorGsp = vscode.workspace.getConfiguration('editor', { languageId: 'gsp' });
+
 	if (emmetGsp.get<boolean>('triggerExpansionOnTab') !== false) {
 		await emmetGsp.update(
 			'triggerExpansionOnTab',
@@ -26,8 +27,22 @@ export async function ensureGspEmmetCoexistence(): Promise<void> {
 			true
 		);
 	}
-
-	const editorGsp = vscode.workspace.getConfiguration('editor', { languageId: 'gsp' });
+	if (emmetGsp.get<boolean>('showAbbreviationSuggestions') !== false) {
+		await emmetGsp.update(
+			'showAbbreviationSuggestions',
+			false,
+			vscode.ConfigurationTarget.Global,
+			true
+		);
+	}
+	if (emmetGsp.get<string>('showExpandedAbbreviation') !== 'never') {
+		await emmetGsp.update(
+			'showExpandedAbbreviation',
+			'never',
+			vscode.ConfigurationTarget.Global,
+			true
+		);
+	}
 	if (editorGsp.get<string>('snippetSuggestions') !== 'top') {
 		await editorGsp.update(
 			'snippetSuggestions',
