@@ -5,6 +5,11 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.1.3]
+- Remove unused tslint and pin patched transitive dependencies (npm audit: 0)
+- Require Node 24 for development (`engines.node` and `@types/node`)
+- Upgrade Mocha to 12
+
 ## [0.1.2]
 - Update development dependencies so the extension installs and packages on current Node and VS Code/Cursor
 - Replace the deprecated `vscode` package with `@types/vscode`
