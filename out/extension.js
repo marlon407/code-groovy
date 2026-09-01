@@ -41,6 +41,7 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const sortLines = __importStar(require("./sort_lines"));
 const groovy_document_symbol_provider_1 = __importDefault(require("./groovy_document_symbol_provider"));
+const taglib_index_1 = require("./gsp/taglib_index");
 function activate(context) {
     const commands = [
         vscode.commands.registerCommand('cgroovy.organizeImports', sortLines.sortImports),
@@ -51,6 +52,9 @@ function activate(context) {
     ];
     commands.forEach(command => context.subscriptions.push(command));
     languages.forEach(language => context.subscriptions.push(language));
+    const tagLibIndex = new taglib_index_1.TagLibIndex();
+    context.subscriptions.push(tagLibIndex);
+    void tagLibIndex.start(context);
 }
 function deactivate() {
 }
