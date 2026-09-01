@@ -29,7 +29,26 @@
         "url": "https://github.com/marlon407/code-groovy"
     },
     "main": "./out/extension",
+    "extensionDependencies": [
+        "vscode.html-language-features"
+    ],
     "contributes": {
+        "htmlLanguageParticipants": [
+            {
+                "languageId": "gsp",
+                "autoInsert": true
+            }
+        ],
+        "configurationDefaults": {
+            "emmet.includeLanguages": {
+                "gsp": "html"
+            }
+        },
+        "html": {
+            "customData": [
+                "./data/grails-gsp.html-data.json"
+            ]
+        },
         "commands": [
             {
                 "command": "cgroovy.organizeImports",
