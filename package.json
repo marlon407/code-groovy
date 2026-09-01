@@ -69,10 +69,6 @@
             {
                 "language": "groovy",
                 "path": "./snippets/groovy.json"
-            },
-            {
-                "language": "gsp",
-                "path": "./snippets/gsp.json"
             }
         ],
         "languages": [

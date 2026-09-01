@@ -1,11 +1,14 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+	applyCompletionToLine,
+	hasLeftoverNamespacePrefix
+} from '../../gsp/completion_apply';
 import { resolveGrailsCoreCompletions } from '../../gsp/grails_core_completions';
 import { resolveTagLibCompletions } from '../../gsp/taglib_completion_logic';
 import { parseTagLibSource } from '../../gsp/taglib_parser';
 
-// Compiled tests live in out/test/unit; fixtures stay in src/test/fixtures.
 const fixturesRoot = path.resolve(__dirname, '../../../src/test/fixtures');
 const tagLibSource = fs.readFileSync(
 	path.join(fixturesRoot, 'taglib/DemoUITagLib.groovy'),
@@ -47,7 +50,7 @@ suite('gsp completion chains (fixtures)', () => {
 		assert.deepStrictEqual(attrs.map(i => i.label).sort(), ['class', 'href', 'featured', 'target']);
 	});
 
-	test('each scenario line from the .gsp fixture resolves without Emmet-style g class output', () => {
+	test('each scenario line from the .gsp fixture resolves without leftover prefixes', () => {
 		for (const line of scenarioLines()) {
 			const core = resolveGrailsCoreCompletions(line);
 			const project = resolveTagLibCompletions(line, tags);
@@ -60,6 +63,12 @@ suite('gsp completion chains (fixtures)', () => {
 
 			assert.ok(combined.length > 0, `expected completions for fixture line: ${line}`);
 			for (const item of combined) {
+				const result = applyCompletionToLine(line, item.replaceLength, item.insertText);
+				assert.strictEqual(
+					hasLeftoverNamespacePrefix(result),
+					false,
+					`leftover prefix for ${line} → ${result}`
+				);
 				assert.ok(
 					!item.insertText.includes('class="each"'),
 					`Emmet-style expansion leaked for ${line}: ${item.insertText}`
@@ -68,10 +77,12 @@ suite('gsp completion chains (fixtures)', () => {
 		}
 	});
 
-	test('g.each fixture line prefers Grails tag insert text', () => {
+	test('g.each fixture line accepts g:each without dangling g.', () => {
 		const line = scenarioLines().find(l => l === 'g.each');
 		assert.ok(line);
-		const items = resolveGrailsCoreCompletions(line!);
-		assert.ok(items.some(i => i.insertText.startsWith('<g:each')));
+		const item = resolveGrailsCoreCompletions(line!).find(i => i.label === 'g:each')!;
+		const result = applyCompletionToLine(line!, item.replaceLength, item.insertText);
+		assert.ok(result.startsWith('<g:each'));
+		assert.strictEqual(result.includes('g.<g:each'), false);
 	});
 });
