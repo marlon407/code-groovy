@@ -31,8 +31,13 @@
     "main": "./out/extension",
     "contributes": {
         "configurationDefaults": {
+            "emmet.includeLanguages": {
+                "gsp": "html"
+            },
             "[gsp]": {
-                "editor.snippetSuggestions": "bottom"
+                "editor.snippetSuggestions": "top",
+                "emmet.triggerExpansionOnTab": false,
+                "emmet.showAbbreviationSuggestions": true
             }
         },
         "commands": [

@@ -7,7 +7,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Discover project `*TagLib.groovy` files and suggest tag methods after `namespace:` / `namespace.` in `.gsp`
 - Infer self-closing vs body tags from `body()` usage; clean empty/broken tag pairs without undoing a typed `/`
 - Support both `g:if` and `g.if` snippet prefixes (without bare `if`) so `g.if` does not leave a leftover `g.`
-- Add unit tests for taglib parsing, completion insert text, and empty/broken tag cleanup
+- Coexist with Emmet in `.gsp`: keep HTML abbreviations, disable Emmet-on-Tab, and own `g.*` / `asset.*` completions so `g.each` does not become `<g class="each">`
+- Add fixture-based completion-chain unit tests under `src/test/fixtures`
 
 ## [0.1.3]
 - Remove unused tslint and pin patched transitive dependencies (npm audit: 0)
