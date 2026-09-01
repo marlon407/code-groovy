@@ -42,6 +42,12 @@
         "configurationDefaults": {
             "emmet.includeLanguages": {
                 "gsp": "html"
+            },
+            "[gsp]": {
+                "editor.snippetSuggestions": "top",
+                "emmet.triggerExpansionOnTab": false,
+                "emmet.showAbbreviationSuggestions": false,
+                "emmet.showExpandedAbbreviation": "never"
             }
         },
         "html": {
@@ -77,10 +83,6 @@
             {
                 "language": "groovy",
                 "path": "./snippets/groovy.json"
-            },
-            {
-                "language": "gsp",
-                "path": "./snippets/gsp.json"
             }
         ],
         "languages": [
@@ -113,7 +115,8 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile",
-        "test": "node ./out/test/runTest.js"
+        "test:unit": "npm run compile && mocha --ui tdd 'out/test/unit/**/*.test.js'",
+        "test": "npm run test:unit && node ./out/test/runTest.js"
     },
     "devDependencies": {
         "@types/mocha": "^10.0.10",

@@ -41,6 +41,8 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const sortLines = __importStar(require("./sort_lines"));
 const groovy_document_symbol_provider_1 = __importDefault(require("./groovy_document_symbol_provider"));
+const gsp_emmet_coexistence_1 = require("./gsp/gsp_emmet_coexistence");
+const taglib_index_1 = require("./gsp/taglib_index");
 function activate(context) {
     const commands = [
         vscode.commands.registerCommand('cgroovy.organizeImports', sortLines.sortImports),
@@ -51,15 +53,10 @@ function activate(context) {
     ];
     commands.forEach(command => context.subscriptions.push(command));
     languages.forEach(language => context.subscriptions.push(language));
-    ensureGspEmmetMapping();
-}
-function ensureGspEmmetMapping() {
-    const emmet = vscode.workspace.getConfiguration('emmet');
-    const include = emmet.get('includeLanguages') ?? {};
-    if (include.gsp === 'html') {
-        return;
-    }
-    emmet.update('includeLanguages', { ...include, gsp: 'html' }, vscode.ConfigurationTarget.Global);
+    void (0, gsp_emmet_coexistence_1.ensureGspEmmetCoexistence)();
+    const tagLibIndex = new taglib_index_1.TagLibIndex();
+    context.subscriptions.push(tagLibIndex);
+    void tagLibIndex.start(context);
 }
 function deactivate() {
 }
