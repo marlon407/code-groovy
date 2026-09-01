@@ -24,7 +24,7 @@ export class TagLibCompletionProvider implements vscode.CompletionItemProvider {
 			);
 			item.detail = completion.detail;
 			item.sortText = `0_core_${completion.label}`;
-			item.filterText = completion.label;
+			item.filterText = completion.filterText;
 			item.insertText = new vscode.SnippetString(completion.insertText);
 			item.range = new vscode.Range(
 				position.translate(0, -completion.replaceLength),

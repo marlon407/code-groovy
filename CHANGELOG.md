@@ -6,9 +6,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## [Unreleased]
 - Discover project `*TagLib.groovy` files and suggest tag methods after `namespace:` / `namespace.` in `.gsp`
 - Infer self-closing vs body tags from `body()` usage; clean empty/broken tag pairs without undoing a typed `/`
-- Support both `g:if` and `g.if` snippet prefixes (without bare `if`) so `g.if` does not leave a leftover `g.`
+- Serve Grails/Asset GSP completions from the provider (not JSON snippets) so accepting `g:each` after typing `g.each` replaces the full trigger and never leaves `g.`
 - Coexist with Emmet in `.gsp`: keep Expand Abbreviation for HTML, but hide Emmet from suggest/Tab so `g.each` / project `namespace.method` are not stolen as `tag.class`
-- Add fixture-based completion-chain unit tests under `src/test/fixtures`
+- Add broad fixture/scenario unit tests for core triggers, project taglibs, and empty/broken tag cleanup
 
 ## [0.1.3]
 - Remove unused tslint and pin patched transitive dependencies (npm audit: 0)

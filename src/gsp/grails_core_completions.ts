@@ -1,12 +1,13 @@
 export interface GrailsCoreCompletion {
+	/** Canonical trigger shown in the list, e.g. `g:each`. */
 	label: string;
 	insertText: string;
 	replaceLength: number;
 	detail: string;
+	filterText: string;
 }
 
 interface CoreSnippet {
-	/** Typed trigger without the leading "g." / "asset." namespace piece handled separately. */
 	method: string;
 	insertText: string;
 	detail: string;
@@ -57,6 +58,16 @@ const G_SNIPPETS: CoreSnippet[] = [
 		method: 'message',
 		insertText: '<g:message code="$1"/>',
 		detail: 'Grails g:message'
+	},
+	{
+		method: 'import',
+		insertText: '<%@ page import="$1" %>',
+		detail: 'GSP page import'
+	},
+	{
+		method: 'service',
+		insertText: '<g:set var="$1" bean="$1"/>',
+		detail: 'Inject a Spring bean via g:set'
 	}
 ];
 
@@ -87,7 +98,8 @@ const CORE_PREFIX_RE = /(?:^|[^A-Za-z0-9_])((g|asset))([:.])([A-Za-z_]\w*)?$/;
 
 /**
  * Completions for built-in Grails/Asset triggers (`g.each`, `g:if`, `asset.javascript`).
- * These win over Emmet's `tag.class` interpretation of the same dotted form.
+ * Always replaces the full typed `namespace[.:]method` fragment so accepting
+ * `g:each` after typing `g.each` cannot leave a dangling `g.`.
  */
 export function resolveGrailsCoreCompletions(linePrefix: string): GrailsCoreCompletion[] {
 	const match = linePrefix.match(CORE_PREFIX_RE);
@@ -103,10 +115,15 @@ export function resolveGrailsCoreCompletions(linePrefix: string): GrailsCoreComp
 
 	return snippets
 		.filter(snippet => snippet.method.startsWith(methodPrefix))
-		.map(snippet => ({
-			label: snippet.method,
-			insertText: snippet.insertText,
-			replaceLength: typedFragment.length,
-			detail: snippet.detail
-		}));
+		.map(snippet => {
+			const colonLabel = `${namespace}:${snippet.method}`;
+			const dotLabel = `${namespace}.${snippet.method}`;
+			return {
+				label: colonLabel,
+				insertText: snippet.insertText,
+				replaceLength: typedFragment.length,
+				detail: snippet.detail,
+				filterText: `${colonLabel} ${dotLabel} ${snippet.method}`
+			};
+		});
 }
