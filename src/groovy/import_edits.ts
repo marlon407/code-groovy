@@ -11,6 +11,8 @@ export interface ImportInsertion {
 
 /**
  * Computes where/how to insert `import fqn` into a Groovy/Java source file.
+ * Places the new import in lexicographic order among existing imports without
+ * reordering any lines that are already present.
  */
 export function planImportInsertion(documentText: string, fqn: string): ImportInsertion {
 	const packageName = parsePackageName(documentText);
@@ -26,7 +28,6 @@ export function planImportInsertion(documentText: string, fqn: string): ImportIn
 		return { offset: 0, text: '', needed: false };
 	}
 
-	// Also treat `import foo.Bar` already present via simple scan of lines.
 	const importLine = `import ${fqn}`;
 	const lines = documentText.split(/\n/);
 	for (const line of lines) {
@@ -35,7 +36,7 @@ export function planImportInsertion(documentText: string, fqn: string): ImportIn
 		}
 	}
 
-	const offset = findImportInsertOffset(documentText);
+	const offset = findSortedImportInsertOffset(documentText, importLine);
 	return {
 		offset,
 		text: `${importLine}\n`,
@@ -43,15 +44,22 @@ export function planImportInsertion(documentText: string, fqn: string): ImportIn
 	};
 }
 
-export function findImportInsertOffset(documentText: string): number {
+/**
+ * Finds the offset to insert `importLine` so it sits in sorted order among
+ * current imports. Existing out-of-order imports are left untouched.
+ */
+export function findSortedImportInsertOffset(documentText: string, importLine: string): number {
+	const target = importLine.trim();
 	const lines = documentText.split('\n');
 	let offset = 0;
 	let afterPackage = 0;
 	let afterLastImport: number | undefined;
+	let insertBeforeOffset: number | undefined;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		const newline = i < lines.length - 1 ? 1 : 0;
+		const lineStart = offset;
 		const lineEnd = offset + line.length + newline;
 		const trimmed = line.trim();
 
@@ -59,6 +67,9 @@ export function findImportInsertOffset(documentText: string): number {
 			afterPackage = lineEnd;
 		} else if (/^import\b/.test(trimmed)) {
 			afterLastImport = lineEnd;
+			if (insertBeforeOffset === undefined && trimmed.localeCompare(target) > 0) {
+				insertBeforeOffset = lineStart;
+			}
 		} else if (trimmed && (afterPackage || afterLastImport !== undefined)) {
 			break;
 		}
@@ -66,7 +77,7 @@ export function findImportInsertOffset(documentText: string): number {
 		offset = lineEnd;
 	}
 
-	return afterLastImport ?? afterPackage;
+	return insertBeforeOffset ?? afterLastImport ?? afterPackage;
 }
 
 export function applyImportInsertion(documentText: string, insertion: ImportInsertion): string {

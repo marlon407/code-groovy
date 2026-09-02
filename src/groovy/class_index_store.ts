@@ -60,20 +60,15 @@ export class ClassIndexStore {
 		if (!prefix) {
 			return [];
 		}
-		const results: IndexedType[] = [];
 		const lower = prefix.toLowerCase();
+		const results: IndexedType[] = [];
 		for (const [name, types] of this.bySimpleName) {
-			if (!name.toLowerCase().startsWith(lower)) {
-				continue;
-			}
-			for (const type of types) {
-				results.push(type);
-				if (results.length >= limit) {
-					return results;
-				}
+			if (name.toLowerCase().startsWith(lower)) {
+				results.push(...types);
 			}
 		}
-		return results;
+		results.sort((a, b) => compareTypeCompletions(a, b, lower));
+		return results.slice(0, limit);
 	}
 
 	removeBySource(source: IndexedType['source']): void {
@@ -108,4 +103,24 @@ export class ClassIndexStore {
 		}
 		return result;
 	}
+}
+
+export function compareTypeCompletions(a: IndexedType, b: IndexedType, prefixLower: string): number {
+	const aExact = a.simpleName.toLowerCase() === prefixLower ? 0 : 1;
+	const bExact = b.simpleName.toLowerCase() === prefixLower ? 0 : 1;
+	if (aExact !== bExact) {
+		return aExact - bExact;
+	}
+
+	const aWorkspace = a.source === 'workspace' ? 0 : 1;
+	const bWorkspace = b.source === 'workspace' ? 0 : 1;
+	if (aWorkspace !== bWorkspace) {
+		return aWorkspace - bWorkspace;
+	}
+
+	if (a.simpleName.length !== b.simpleName.length) {
+		return a.simpleName.length - b.simpleName.length;
+	}
+
+	return a.simpleName.localeCompare(b.simpleName) || a.fqn.localeCompare(b.fqn);
 }

@@ -29,9 +29,47 @@ suite('import_edits', () => {
 		assert.strictEqual(planImportInsertion(source, 'grails.validation.Validateable').needed, false);
 	});
 
-	test('appends after the last existing import', () => {
+	test('inserts the new import in sorted position without reordering others', () => {
+		const source = [
+			'package com.demo',
+			'import com.example.app.userpermission.AdminModulePermission',
+			'import com.example.app.util.Utils',
+			'import grails.plugin.springsecurity.SpringSecurityUtils',
+			'import java.util.concurrent.TimeUnit',
+			'import grails.validation.Validateable',
+			'',
+			'class Person {}',
+			''
+		].join('\n');
+
+		const updated = applyImportInsertion(
+			source,
+			planImportInsertion(source, 'com.example.app.domain.CustomerAccount')
+		);
+
+		assert.ok(
+			updated.includes(
+				'import com.example.app.domain.CustomerAccount\nimport com.example.app.userpermission.AdminModulePermission\n'
+			)
+		);
+		// Existing out-of-order Validateable stays where it was.
+		assert.ok(
+			updated.includes(
+				'import java.util.concurrent.TimeUnit\nimport grails.validation.Validateable\n'
+			)
+		);
+	});
+
+	test('inserts before a later package group when that is the sorted spot', () => {
 		const source = 'package com.demo\nimport java.time.LocalDate\n\nclass Person {}\n';
-		const updated = applyImportInsertion(source, planImportInsertion(source, 'grails.validation.Validateable'));
-		assert.ok(updated.includes('import java.time.LocalDate\nimport grails.validation.Validateable\n'));
+		const updated = applyImportInsertion(
+			source,
+			planImportInsertion(source, 'grails.validation.Validateable')
+		);
+		assert.ok(
+			updated.includes(
+				'import grails.validation.Validateable\nimport java.time.LocalDate\n'
+			)
+		);
 	});
 });

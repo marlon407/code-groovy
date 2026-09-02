@@ -3,6 +3,7 @@ import { ClassIndexStore, indexJarFqns, indexSourceText, IndexedType, MAX_INDEXE
 import { hashWorkspaceBuildFiles, resolveProjectClasspath } from './classpath_resolver';
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
+import { ImportOrderDiagnostics } from './import_order_diagnostics';
 import { listClassFqnsFromJar } from './jar_class_scanner';
 
 const CACHE_KEY = 'codeGroovy.classpathIndex.v1';
@@ -17,13 +18,16 @@ export class ClassIndex implements vscode.Disposable {
 	private readonly store = new ClassIndexStore();
 	private readonly completionProvider = new ImportCompletionProvider(this.store);
 	private readonly codeActionProvider = new ImportCodeActionProvider(this.store);
+	private readonly importOrderDiagnostics = new ImportOrderDiagnostics();
 	private readonly disposables: vscode.Disposable[] = [];
 	private sourceTimer: ReturnType<typeof setTimeout> | undefined;
 	private classpathTimer: ReturnType<typeof setTimeout> | undefined;
 	private warnedClasspath = false;
 
 	async start(context: vscode.ExtensionContext): Promise<void> {
+		this.importOrderDiagnostics.start();
 		this.disposables.push(
+			this.importOrderDiagnostics,
 			vscode.languages.registerCompletionItemProvider(
 				{ language: 'groovy' },
 				this.completionProvider

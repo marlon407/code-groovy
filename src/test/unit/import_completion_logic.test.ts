@@ -70,6 +70,21 @@ suite('import completion and code action (issue #3)', () => {
 		assert.strictEqual(actions[0].insertion.text, 'import grails.validation.Validateable\n');
 	});
 
+	test('keeps workspace Customer ahead of later JAR Customer* types', () => {
+		const store = new ClassIndexStore();
+		const jarTypes = Array.from({ length: 60 }, (_, i) => `com.plugin.CustomerExtra${i}`);
+		jarTypes.push('com.plugin.CustomerAccountDTO');
+		store.add(indexJarFqns(jarTypes));
+		store.add(indexSourceText('package com.demo\nclass Customer {}\n', 'Customer.groovy'));
+		store.add(indexSourceText('package com.demo\nclass CustomerAccount {}\n', 'CustomerAccount.groovy'));
+
+		const completions = resolveTypeCompletions('Customer', issueSource, store);
+		assert.ok(completions.some(item => item.fqn === 'com.demo.Customer'));
+		assert.ok(completions.some(item => item.fqn === 'com.demo.CustomerAccount'));
+		assert.strictEqual(completions[0].fqn, 'com.demo.Customer');
+		assert.strictEqual(completions[1].fqn, 'com.demo.CustomerAccount');
+	});
+
 	test('does not offer an import that already exists', () => {
 		const store = issueStore();
 		const source = 'package com.demo\nimport grails.validation.Validateable\n\nclass Person implements Validateable {}\n';
