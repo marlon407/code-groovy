@@ -42,6 +42,7 @@ const vscode = __importStar(require("vscode"));
 const sortLines = __importStar(require("./sort_lines"));
 const groovy_document_symbol_provider_1 = __importDefault(require("./groovy_document_symbol_provider"));
 const gsp_emmet_coexistence_1 = require("./gsp/gsp_emmet_coexistence");
+const class_index_1 = require("./groovy/class_index");
 const taglib_index_1 = require("./gsp/taglib_index");
 function activate(context) {
     const commands = [
@@ -57,6 +58,9 @@ function activate(context) {
     const tagLibIndex = new taglib_index_1.TagLibIndex();
     context.subscriptions.push(tagLibIndex);
     void tagLibIndex.start(context);
+    const classIndex = new class_index_1.ClassIndex();
+    context.subscriptions.push(classIndex);
+    void classIndex.start(context);
 }
 function deactivate() {
 }

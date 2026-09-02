@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import * as sortLines from './sort_lines';
 import GroovyDocumentSymbolProvider from './groovy_document_symbol_provider';
 import { ensureGspEmmetCoexistence } from './gsp/gsp_emmet_coexistence';
+import { ClassIndex } from './groovy/class_index';
 import { TagLibIndex } from './gsp/taglib_index';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -25,6 +26,10 @@ export function activate(context: vscode.ExtensionContext) {
     const tagLibIndex = new TagLibIndex();
     context.subscriptions.push(tagLibIndex);
     void tagLibIndex.start(context);
+
+    const classIndex = new ClassIndex();
+    context.subscriptions.push(classIndex);
+    void classIndex.start(context);
 }
 
 export function deactivate() {
