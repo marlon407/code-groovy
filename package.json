@@ -49,6 +49,12 @@
                 "emmet.triggerExpansionOnTab": false,
                 "emmet.showAbbreviationSuggestions": false,
                 "emmet.showExpandedAbbreviation": "never"
+            },
+            "files.associations": {
+                "*.groovy": "groovy",
+                "*.gvy": "groovy",
+                "*.gy": "groovy",
+                "*.gsh": "groovy"
             }
         },
         "html": {
@@ -88,6 +94,20 @@
         ],
         "languages": [
             {
+                "id": "groovy",
+                "aliases": [
+                    "Groovy"
+                ],
+                "extensions": [
+                    ".groovy",
+                    ".gvy",
+                    ".gy",
+                    ".gsh"
+                ],
+                "firstLine": "^#!.*\\bgroovy\\b",
+                "configuration": "./language-configuration-groovy.json"
+            },
+            {
                 "id": "gsp",
                 "aliases": [
                     "Groovy Server Pages"
@@ -99,6 +119,18 @@
             }
         ],
         "grammars": [
+            {
+                "language": "groovy",
+                "scopeName": "source.groovy",
+                "path": "./syntaxes/groovy.tmLanguage.json"
+            },
+            {
+                "scopeName": "source.groovy.code-groovy.injection",
+                "path": "./syntaxes/groovy.injection.tmLanguage.json",
+                "injectTo": [
+                    "source.groovy"
+                ]
+            },
             {
                 "language": "gsp",
                 "scopeName": "text.html.gsp",
