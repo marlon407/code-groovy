@@ -4,6 +4,7 @@ import { hashWorkspaceBuildFiles, resolveProjectClasspath } from './classpath_re
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
 import { ImportOrderDiagnostics } from './import_order_diagnostics';
+import { GroovydocHoverProvider } from './groovydoc_hover_provider';
 import { listClassFqnsFromJar } from './jar_class_scanner';
 
 const CACHE_KEY = 'codeGroovy.classpathIndex.v1';
@@ -36,6 +37,10 @@ export class ClassIndex implements vscode.Disposable {
 				{ language: 'groovy' },
 				this.codeActionProvider,
 				{ providedCodeActionKinds: ImportCodeActionProvider.providedCodeActionKinds }
+			),
+			vscode.languages.registerHoverProvider(
+				{ language: 'groovy' },
+				new GroovydocHoverProvider(this.store)
 			)
 		);
 

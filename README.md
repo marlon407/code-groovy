@@ -13,6 +13,7 @@ Features
 - Groovy organize service injections
 - Groovy code snippets
 - Groovy symbol support (including TagLib closures)
+- Groovy Groovydoc / Javadoc hover docs
 - GSP syntax
 - GSP snippets
 
