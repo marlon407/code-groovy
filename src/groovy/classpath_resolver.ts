@@ -86,7 +86,11 @@ export function prioritizeJars(jars: string[], limit = 300): string[] {
 		const base = path.basename(jar).toLowerCase();
 		let score = 0;
 		if (base.includes('grails')) score += 100;
+		if (base.includes('spring-security')) score += 95;
 		if (base.includes('groovy')) score += 80;
+		if (base.includes('converters')) score += 75;
+		if (base.includes('encoder')) score += 70;
+		if (base.includes('web-common')) score += 70;
 		if (base.includes('validation')) score += 40;
 		if (base.includes('spring')) score += 20;
 		return { jar, score };
@@ -100,11 +104,11 @@ export async function resolveProjectClasspath(
 	runCommand: typeof runProcess = runProcess
 ): Promise<ClasspathResolution> {
 	const workspaceJars = collectWorkspaceJars(workspaceRoot);
-
+	const gradleProjectRoot = resolveGradleProjectRoot(workspaceRoot);
 	const gradlew = findGradlew(workspaceRoot);
 	if (gradlew) {
 		try {
-			const jars = await resolveGradleClasspath(workspaceRoot, gradlew, runCommand);
+			const jars = await resolveGradleClasspath(gradleProjectRoot, gradlew, runCommand);
 			const merged = prioritizeJars(uniqueExisting([...jars, ...workspaceJars]));
 			return { jars: merged, tool: 'gradle' };
 		} catch (error) {
@@ -228,18 +232,31 @@ function walkJars(dir: string, out: string[], depth: number): void {
 }
 
 function findGradlew(workspaceRoot: string): string | undefined {
-	const win = path.join(workspaceRoot, 'gradlew.bat');
-	const unix = path.join(workspaceRoot, 'gradlew');
-	if (process.platform === 'win32' && fs.existsSync(win)) {
-		return win;
-	}
-	if (fs.existsSync(unix)) {
-		return unix;
-	}
-	if (fs.existsSync(win)) {
-		return win;
+	let current = workspaceRoot;
+	for (let depth = 0; depth < 6; depth++) {
+		const win = path.join(current, 'gradlew.bat');
+		const unix = path.join(current, 'gradlew');
+		if (process.platform === 'win32' && fs.existsSync(win)) {
+			return win;
+		}
+		if (fs.existsSync(unix)) {
+			return unix;
+		}
+		if (fs.existsSync(win)) {
+			return win;
+		}
+		const parent = path.dirname(current);
+		if (parent === current) {
+			break;
+		}
+		current = parent;
 	}
 	return undefined;
+}
+
+export function resolveGradleProjectRoot(workspacePath: string): string {
+	const gradlew = findGradlew(workspacePath);
+	return gradlew ? path.dirname(gradlew) : workspacePath;
 }
 
 function unique(jars: string[]): string[] {

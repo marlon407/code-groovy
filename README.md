@@ -10,6 +10,7 @@ Features
 
 - Groovy organize imports
 - Groovy auto-import of types from workspace source and Gradle/Maven JARs
+- Groovy Ctrl+click Go to Definition for classes, methods, services, and supertype methods
 - Groovy organize service injections
 - Groovy code snippets
 - Groovy symbol support (including TagLib closures)

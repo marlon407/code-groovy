@@ -8,6 +8,10 @@ export interface IndexedType {
 	fqn: string;
 	source: 'workspace' | 'jar';
 	sourcePath?: string;
+	declarationLine?: number;
+	declarationColumn?: number;
+	extendsTypes?: string[];
+	implementsTypes?: string[];
 }
 
 export function simpleNameFromFqn(fqn: string): string {
@@ -35,6 +39,7 @@ export function indexJarFqns(fqns: string[], jarPath?: string): IndexedType[] {
 
 export class ClassIndexStore {
 	private readonly bySimpleName = new Map<string, IndexedType[]>();
+	private readonly byFqn = new Map<string, IndexedType>();
 	private count = 0;
 
 	add(types: IndexedType[]): void {
@@ -48,8 +53,13 @@ export class ClassIndexStore {
 			}
 			list.push(type);
 			this.bySimpleName.set(type.simpleName, list);
+			this.byFqn.set(type.fqn, type);
 			this.count += 1;
 		}
+	}
+
+	lookupByFqn(fqn: string): IndexedType | undefined {
+		return this.byFqn.get(fqn);
 	}
 
 	lookup(simpleName: string): IndexedType[] {
@@ -74,6 +84,11 @@ export class ClassIndexStore {
 	removeBySource(source: IndexedType['source']): void {
 		for (const [name, types] of this.bySimpleName) {
 			const kept = types.filter(type => type.source !== source);
+			for (const type of types) {
+				if (type.source === source) {
+					this.byFqn.delete(type.fqn);
+				}
+			}
 			this.count -= types.length - kept.length;
 			if (kept.length === 0) {
 				this.bySimpleName.delete(name);
@@ -85,11 +100,24 @@ export class ClassIndexStore {
 
 	clear(): void {
 		this.bySimpleName.clear();
+		this.byFqn.clear();
 		this.count = 0;
 	}
 
 	size(): number {
 		return this.count;
+	}
+
+	countBySource(source: IndexedType['source']): number {
+		let count = 0;
+		for (const types of this.bySimpleName.values()) {
+			for (const type of types) {
+				if (type.source === source) {
+					count += 1;
+				}
+			}
+		}
+		return count;
 	}
 
 	serialize(source: IndexedType['source']): Array<{ simpleName: string; fqn: string }> {
