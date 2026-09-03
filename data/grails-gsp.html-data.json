@@ -17,7 +17,7 @@
       "references": [
         {
           "name": "Grails g:if",
-          "url": "https://docs.grails.org/latest/ref/Tags/if.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/if.html"
         }
       ]
     },
@@ -28,7 +28,7 @@
       "references": [
         {
           "name": "Grails g:else",
-          "url": "https://docs.grails.org/latest/ref/Tags/else.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/else.html"
         }
       ]
     },
@@ -48,7 +48,7 @@
       "references": [
         {
           "name": "Grails g:elseif",
-          "url": "https://docs.grails.org/latest/ref/Tags/elseif.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/elseif.html"
         }
       ]
     },
@@ -72,7 +72,7 @@
       "references": [
         {
           "name": "Grails g:each",
-          "url": "https://docs.grails.org/latest/ref/Tags/each.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/each.html"
         }
       ]
     },
@@ -100,7 +100,7 @@
       "references": [
         {
           "name": "Grails g:set",
-          "url": "https://docs.grails.org/latest/ref/Tags/set.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/set.html"
         }
       ]
     },
@@ -136,7 +136,7 @@
       "references": [
         {
           "name": "Grails g:render",
-          "url": "https://docs.grails.org/latest/ref/Tags/render.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/render.html"
         }
       ]
     },
@@ -192,7 +192,7 @@
       "references": [
         {
           "name": "Grails g:link",
-          "url": "https://docs.grails.org/latest/ref/Tags/link.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/link.html"
         }
       ]
     },
@@ -240,7 +240,7 @@
       "references": [
         {
           "name": "Grails g:form",
-          "url": "https://docs.grails.org/latest/ref/Tags/form.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/form.html"
         }
       ]
     },
@@ -272,7 +272,7 @@
       "references": [
         {
           "name": "Grails g:message",
-          "url": "https://docs.grails.org/latest/ref/Tags/message.html"
+          "url": "https://grails.apache.org/docs-legacy-gsp/latest/ref/Tags/message.html"
         }
       ]
     },
