@@ -17,6 +17,8 @@ export interface GspDefinitionContext {
 
 const TAG_AT_RE = /<\/?([A-Za-z_]\w*):([A-Za-z_]\w*)/g;
 const TAGLIB_CALL_RE = /\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\b/g;
+/** Built-in Grails/Asset namespaces that are TagLib calls, not bean.method. */
+const CORE_TAGLIB_NAMESPACES = new Set(['g', 'asset']);
 
 export function findTagAtPosition(
 	lineText: string,
@@ -66,6 +68,13 @@ function resolveProjectTag(
 		column: projectTag.methodColumn,
 		label: projectTag.name
 	}];
+}
+
+function isTagLibNamespace(namespace: string, tags: ProjectTagLibTag[]): boolean {
+	if (CORE_TAGLIB_NAMESPACES.has(namespace)) {
+		return true;
+	}
+	return tags.some(tag => tag.namespace === namespace);
 }
 
 export function findEmbeddedGroovyAtOffset(
@@ -124,13 +133,12 @@ export function resolveGspDefinitions(context: GspDefinitionContext): Definition
 	}
 
 	const tagLibCall = findTagLibCallAtPosition(embedded.text, embedded.localOffset);
-	if (tagLibCall) {
+	if (tagLibCall && isTagLibNamespace(tagLibCall.namespace, context.tags)) {
 		const fromProject = resolveProjectTag(context.tags, tagLibCall.namespace, tagLibCall.method);
 		if (fromProject.length > 0) {
 			return fromProject;
 		}
-		// e.g. g.createLink — Grails core TagLib, not in the workspace. Return empty so we
-		// don't resolve receiver `g` as a class named `G` or open the attribute as a file path.
+		// e.g. g.createLink — core TagLib, not in the workspace. Empty (don't resolve `g` as class `G`).
 		return [];
 	}
 
