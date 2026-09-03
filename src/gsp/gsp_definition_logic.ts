@@ -6,7 +6,7 @@ import {
 	findOpenTagBefore,
 	resolveGspResourcePath
 } from './gsp_resource_path_logic';
-import { ProjectTagLibTag } from './taglib_parser';
+import { ProjectTagLibTag, tagMatchesReceiver } from './taglib_parser';
 
 export interface GspDefinitionContext {
 	documentText: string;
@@ -63,7 +63,7 @@ function resolveProjectTag(
 	namespace: string,
 	method: string
 ): DefinitionTarget[] {
-	const projectTag = tags.find(item => item.namespace === namespace && item.method === method);
+	const projectTag = tags.find(item => tagMatchesReceiver(item, namespace) && item.method === method);
 	if (!projectTag) {
 		return [];
 	}
@@ -79,7 +79,7 @@ function isTagLibNamespace(namespace: string, tags: ProjectTagLibTag[]): boolean
 	if (CORE_TAGLIB_NAMESPACES.has(namespace)) {
 		return true;
 	}
-	return tags.some(tag => tag.namespace === namespace);
+	return tags.some(tag => tagMatchesReceiver(tag, namespace));
 }
 
 export function findEmbeddedGroovyAtOffset(
