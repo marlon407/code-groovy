@@ -140,6 +140,13 @@
                     "source.js": "javascript",
                     "source.groovy": "groovy"
                 }
+            },
+            {
+                "scopeName": "text.html.gsp.grails-mid-tag.injection",
+                "path": "./syntaxes/gsp.grails-mid-tag.injection.tmLanguage.json",
+                "injectTo": [
+                    "text.html.gsp"
+                ]
             }
         ]
     },
