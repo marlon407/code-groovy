@@ -14,6 +14,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Rank auto-import suggestions so workspace types like `Customer` stay above longer JAR names such as `CustomerAccountDTO`
 - Insert auto-imported lines in sorted position without reshuffling existing imports; warn (yellow) on out-of-order import lines
 - Add Ctrl+click Go to Definition for Groovy types, methods, services, and inherited methods (workspace + JAR sources when available)
+- Suggest workspace/Grails methods on member access (`receiver.`) using the same artifact hierarchy as Go to Definition
 - Improve navigation with Grails artifact index (class file name), service bean resolution, and method parsing adapted from grails-vscode patterns
 - Enable HTML Emmet/HTML language features in `.gsp`, with coexistence settings so Emmet does not steal `g.each` / project `namespace.method`
 - Add IntelliSense/hover hints for common Grails `g:` and Asset Pipeline `asset:` tags via HTML custom data

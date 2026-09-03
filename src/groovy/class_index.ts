@@ -10,6 +10,7 @@ import { ImportOrderDiagnostics } from './import_order_diagnostics';
 import { GroovydocHoverProvider } from './groovydoc_hover_provider';
 import { IndexStatusBar } from './index_status';
 import { listClassFqnsFromJar } from './jar_class_scanner';
+import { MethodCompletionProvider } from './method_completion_provider';
 import { MethodIndexStore } from './method_index_store';
 import { indexWorkspaceDocument } from './workspace_symbol_index';
 
@@ -32,6 +33,7 @@ export class ClassIndex implements vscode.Disposable {
 	private readonly methodStore = new MethodIndexStore();
 	private readonly artifactIndex = new GrailsArtifactIndex();
 	private readonly completionProvider = new ImportCompletionProvider(this.store);
+	private readonly methodCompletionProvider = new MethodCompletionProvider(this.artifactIndex);
 	private readonly codeActionProvider = new ImportCodeActionProvider(this.store);
 	private readonly definitionProvider = new DefinitionProvider(
 		this.store,
@@ -65,6 +67,11 @@ export class ClassIndex implements vscode.Disposable {
 			vscode.languages.registerCompletionItemProvider(
 				{ language: 'groovy' },
 				this.completionProvider
+			),
+			vscode.languages.registerCompletionItemProvider(
+				{ language: 'groovy' },
+				this.methodCompletionProvider,
+				'.'
 			),
 			vscode.languages.registerCodeActionsProvider(
 				{ language: 'groovy' },
