@@ -4,6 +4,7 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+- Support F2 rename for identifiers in the current Groovy file (skips comments/strings; same-file only)
 - Highlight Grails tags (`g:if`, etc.) correctly when nested inside an HTML open tag in `.gsp`
 - Ship a Groovy TextMate grammar (slashy strings + Spock quoted method names) so `.groovy` highlighting is owned by this extension
 - Show Groovydoc / Javadoc comments on hover for Groovy types and methods (Markdown rendering of common tags)
