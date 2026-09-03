@@ -5,6 +5,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 - Support Ctrl+click / Go to Definition in `.gsp` for project TagLib tags (`<ns:tag>` / `ns.method`) and Groovy inside `${...}` / `<%...%>` (including when VS Code routes `${}` to the Groovy language)
+- Ctrl+click `template=` / `src=` / `url=` on `g:render` and `asset:*` tags to open the view or asset file
 - Disable HTML `editor.links` in `.gsp` so attribute values like `action="${g.createLink(...)}"` are not opened as fake file paths
 - Point Grails `g:` tag hover/reference links at the legacy GSP docs (`docs-legacy-gsp`) instead of the broken `/docs/latest/ref/Tags/` URLs
 - Support F2 rename for identifiers in the current Groovy file (skips comments/strings; same-file only)
