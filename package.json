@@ -1,7 +1,7 @@
 {
     "name": "code-groovy",
-    "displayName": "code-groovy",
-    "description": "Groovy support for VSCode",
+    "displayName": "Code Groovy",
+    "description": "Groovy and GSP support for VS Code and Cursor",
     "version": "0.1.3",
     "publisher": "marlon407",
     "license": "MIT",
