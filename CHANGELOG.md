@@ -4,6 +4,8 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+- Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)
+- Ctrl+click another TagLib from Groovy (`paymentTagLib.method` / `namespace.method`) and `g.render(template: "...")` the same way as in GSP
 - Support Ctrl+click / Go to Definition in `.gsp` for project TagLib tags (`<ns:tag>` / `ns.method`) and Groovy inside `${...}` / `<%...%>` (including when VS Code routes `${}` to the Groovy language)
 - Ctrl+click `template=` / `src=` / `url=` on `g:render` and `asset:*` tags to open the view or asset file (full path underlined, prefers `.scss` over compiled `.css`)
 - Disable HTML `editor.links` in `.gsp` so attribute values like `action="${g.createLink(...)}"` are not opened as fake file paths
