@@ -43,7 +43,9 @@ const sortLines = __importStar(require("./sort_lines"));
 const groovy_document_symbol_provider_1 = __importDefault(require("./groovy_document_symbol_provider"));
 const gsp_emmet_coexistence_1 = require("./gsp/gsp_emmet_coexistence");
 const class_index_1 = require("./groovy/class_index");
+const jar_content_provider_1 = require("./groovy/jar_content_provider");
 const taglib_index_1 = require("./gsp/taglib_index");
+let classIndex;
 function activate(context) {
     const commands = [
         vscode.commands.registerCommand('cgroovy.organizeImports', sortLines.sortImports),
@@ -55,11 +57,13 @@ function activate(context) {
     commands.forEach(command => context.subscriptions.push(command));
     languages.forEach(language => context.subscriptions.push(language));
     void (0, gsp_emmet_coexistence_1.ensureGspEmmetCoexistence)();
+    (0, jar_content_provider_1.registerJarContentProvider)(context);
     const tagLibIndex = new taglib_index_1.TagLibIndex();
     context.subscriptions.push(tagLibIndex);
     void tagLibIndex.start(context);
-    const classIndex = new class_index_1.ClassIndex();
+    classIndex = new class_index_1.ClassIndex();
     context.subscriptions.push(classIndex);
+    context.subscriptions.push(vscode.commands.registerCommand('cgroovy.showIndexOutput', () => classIndex?.showIndexOutput()), vscode.commands.registerCommand('cgroovy.rebuildIndex', () => classIndex?.rebuildIndex()));
     void classIndex.start(context);
 }
 function deactivate() {
