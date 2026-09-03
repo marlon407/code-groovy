@@ -12,7 +12,7 @@ Features
 - Groovy auto-import of types from workspace source and Gradle/Maven JARs
 - Groovy organize service injections
 - Groovy code snippets
-- Groovy symbol support
+- Groovy symbol support (including TagLib closures)
 - GSP syntax
 - GSP snippets
 
