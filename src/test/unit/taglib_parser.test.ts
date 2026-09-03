@@ -38,6 +38,13 @@ suite('taglib_parser', () => {
 		assert.strictEqual(accountLink.name, 'demo:accountLink');
 		assert.strictEqual(accountLink.usesBody, false);
 		assert.deepStrictEqual(accountLink.attributes, ['class', 'href', 'isAtlas', 'target']);
+		assert.ok(Number.isInteger(accountLink.methodLine));
+		assert.ok(accountLink.methodColumn >= 0);
+		const around = SAMPLE_TAGLIB.slice(
+			Math.max(0, SAMPLE_TAGLIB.indexOf('def accountLink') - 1),
+			SAMPLE_TAGLIB.indexOf('def accountLink') + 20
+		);
+		assert.ok(around.includes('accountLink'));
 
 		const adminButton = tags.find(t => t.method === 'adminButton')!;
 		assert.strictEqual(adminButton.usesBody, true);

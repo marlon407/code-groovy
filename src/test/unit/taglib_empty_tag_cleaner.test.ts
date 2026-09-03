@@ -12,7 +12,9 @@ const tags: ProjectTagLibTag[] = [
 		method: 'accountLink',
 		attributes: [],
 		usesBody: false,
-		sourcePath: 'DemoUITagLib.groovy'
+		sourcePath: 'DemoUITagLib.groovy',
+		methodLine: 3,
+		methodColumn: 8
 	},
 	{
 		name: 'demoUI:adminButton',
@@ -20,7 +22,9 @@ const tags: ProjectTagLibTag[] = [
 		method: 'adminButton',
 		attributes: [],
 		usesBody: true,
-		sourcePath: 'DemoUITagLib.groovy'
+		sourcePath: 'DemoUITagLib.groovy',
+		methodLine: 10,
+		methodColumn: 8
 	}
 ];
 

@@ -46,6 +46,7 @@
             },
             "[gsp]": {
                 "editor.snippetSuggestions": "top",
+                "editor.links": true,
                 "emmet.triggerExpansionOnTab": false,
                 "emmet.showAbbreviationSuggestions": false,
                 "emmet.showExpandedAbbreviation": "never"
