@@ -69,4 +69,26 @@ suite('gsp_resource_path_logic', () => {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
 	});
+
+	test('prefers .scss source over literal .css for asset:stylesheet', () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'code-groovy-gsp-scss-'));
+		try {
+			const dir = path.join(root, 'grails-app/assets/stylesheets/dashboard');
+			fs.mkdirSync(dir, { recursive: true });
+			const css = path.join(dir, 'dashboardHome.css');
+			const scss = path.join(dir, 'dashboardHome.scss');
+			fs.writeFileSync(css, '/* compiled */\n');
+			fs.writeFileSync(scss, '$x: 1;\n');
+
+			const resolved = resolveGspResourcePath({
+				attrName: 'src',
+				attrValue: 'dashboard/dashboardHome.css',
+				tag: { namespace: 'asset', method: 'stylesheet' },
+				workspaceRoot: root
+			});
+			assert.strictEqual(resolved, scss);
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

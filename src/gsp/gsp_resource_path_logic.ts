@@ -117,21 +117,53 @@ function resolveAssetPath(
 	for (const grailsApp of grailsAppRoots) {
 		const assetsRoot = path.join(grailsApp, 'assets');
 		for (const sub of preferredDirs) {
-			candidates.push(path.join(assetsRoot, sub, normalized));
+			candidates.push(...assetCandidatesForFile(path.join(assetsRoot, sub), normalized, method));
 		}
-		candidates.push(path.join(assetsRoot, normalized));
-		// Extension fallbacks when omitted
-		if (!path.extname(normalized)) {
-			for (const ext of extensionsForMethod(method)) {
-				for (const sub of preferredDirs) {
-					candidates.push(path.join(assetsRoot, sub, `${normalized}${ext}`));
-				}
-				candidates.push(path.join(assetsRoot, `${normalized}${ext}`));
-			}
-		}
+		candidates.push(...assetCandidatesForFile(assetsRoot, normalized, method));
 	}
 
 	return candidates.find(candidate => fs.existsSync(candidate));
+}
+
+/**
+ * Asset Pipeline tags often say `foo.css` while the editable source is `foo.scss`.
+ * Prefer preprocessor sources over the literal `.css` path when both exist.
+ */
+function assetCandidatesForFile(
+	directory: string,
+	normalizedSrc: string,
+	method: string | undefined
+): string[] {
+	const ext = path.extname(normalizedSrc).toLowerCase();
+	const withoutExt = ext ? normalizedSrc.slice(0, -ext.length) : normalizedSrc;
+	const ordered: string[] = [];
+
+	if (ext === '.css' || method === 'stylesheet' || method === 'css') {
+		for (const sourceExt of ['.scss', '.sass', '.less']) {
+			ordered.push(path.join(directory, `${withoutExt}${sourceExt}`));
+		}
+	}
+	if (ext === '.js' || method === 'javascript' || method === 'js') {
+		for (const sourceExt of ['.ts', '.coffee', '.jsx', '.tsx']) {
+			ordered.push(path.join(directory, `${withoutExt}${sourceExt}`));
+		}
+	}
+
+	// Exact path from the tag (e.g. dashboard/dashboardHome.css)
+	ordered.push(path.join(directory, normalizedSrc));
+
+	if (!ext) {
+		for (const fallbackExt of extensionsForMethod(method)) {
+			if (fallbackExt === '.css') {
+				for (const sourceExt of ['.scss', '.sass', '.less']) {
+					ordered.push(path.join(directory, `${normalizedSrc}${sourceExt}`));
+				}
+			}
+			ordered.push(path.join(directory, `${normalizedSrc}${fallbackExt}`));
+		}
+	}
+
+	return ordered;
 }
 
 function assetSubdirsForMethod(method: string | undefined): string[] {
