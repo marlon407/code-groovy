@@ -16,6 +16,7 @@ export interface GspDefinitionContext {
 }
 
 const TAG_AT_RE = /<\/?([A-Za-z_]\w*):([A-Za-z_]\w*)/g;
+const TAGLIB_CALL_RE = /\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\b/g;
 
 export function findTagAtPosition(
 	lineText: string,
@@ -31,6 +32,40 @@ export function findTagAtPosition(
 		}
 	}
 	return undefined;
+}
+
+/** Matches Grails TagLib calls like `g.createLink` / `demoUI.accountLink`. */
+export function findTagLibCallAtPosition(
+	text: string,
+	offset: number
+): { namespace: string; method: string } | undefined {
+	TAGLIB_CALL_RE.lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = TAGLIB_CALL_RE.exec(text)) !== null) {
+		const start = match.index;
+		const end = start + match[0].length;
+		if (offset >= start && offset < end) {
+			return { namespace: match[1], method: match[2] };
+		}
+	}
+	return undefined;
+}
+
+function resolveProjectTag(
+	tags: ProjectTagLibTag[],
+	namespace: string,
+	method: string
+): DefinitionTarget[] {
+	const projectTag = tags.find(item => item.namespace === namespace && item.method === method);
+	if (!projectTag) {
+		return [];
+	}
+	return [{
+		uri: projectTag.sourcePath,
+		line: projectTag.methodLine,
+		column: projectTag.methodColumn,
+		label: projectTag.name
+	}];
 }
 
 export function findEmbeddedGroovyAtOffset(
@@ -77,23 +112,25 @@ export function resolveGspDefinitions(context: GspDefinitionContext): Definition
 	const lineText = lines[context.line] ?? '';
 	const tag = findTagAtPosition(lineText, context.character);
 	if (tag) {
-		const projectTag = context.tags.find(
-			item => item.namespace === tag.namespace && item.method === tag.method
-		);
-		if (projectTag) {
-			return [{
-				uri: projectTag.sourcePath,
-				line: projectTag.methodLine,
-				column: projectTag.methodColumn,
-				label: projectTag.name
-			}];
-		}
-		return [];
+		// XML-style <g:createLink> / <demoUI:x>. Core g: tags with no project TagLib → no target
+		// (do not fall through — avoids bogus resolutions / HTML "open file" fallthrough).
+		return resolveProjectTag(context.tags, tag.namespace, tag.method);
 	}
 
 	const offset = offsetAt(lines, context.line, context.character);
 	const embedded = findEmbeddedGroovyAtOffset(context.documentText, offset);
 	if (!embedded) {
+		return [];
+	}
+
+	const tagLibCall = findTagLibCallAtPosition(embedded.text, embedded.localOffset);
+	if (tagLibCall) {
+		const fromProject = resolveProjectTag(context.tags, tagLibCall.namespace, tagLibCall.method);
+		if (fromProject.length > 0) {
+			return fromProject;
+		}
+		// e.g. g.createLink — Grails core TagLib, not in the workspace. Return empty so we
+		// don't resolve receiver `g` as a class named `G` or open the attribute as a file path.
 		return [];
 	}
 
