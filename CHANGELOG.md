@@ -4,6 +4,7 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+- Show Groovydoc / Javadoc comments on hover for Groovy types and methods (Markdown rendering of common tags)
 - Include methods with generic return types (e.g. `Map`, `List<Map>`) in document symbols / outline
 - Match square brackets `[` `]` in GSP bracket matching
 - Include TagLib-style closure assignments (`def myTag = { ... }`) in document symbols / outline
