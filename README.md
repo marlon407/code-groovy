@@ -14,6 +14,7 @@ Features
 - Groovy code snippets
 - Groovy symbol support (including TagLib closures)
 - Groovy Groovydoc / Javadoc hover docs
+- Groovy syntax highlighting (slashy strings, Spock quoted methods)
 - GSP syntax
 - GSP snippets
 

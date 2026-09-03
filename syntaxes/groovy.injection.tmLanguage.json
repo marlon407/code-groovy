@@ -1,0 +1,113 @@
+{
+  "scopeName": "source.groovy.code-groovy.injection",
+  "injectionSelector": "L:source.groovy -comment -string",
+  "patterns": [
+    { "include": "#quoted-methods" },
+    { "include": "#dollar-slashy-string" },
+    { "include": "#slashy-string" }
+  ],
+  "repository": {
+    "string-interpolation": {
+      "patterns": [
+        {
+          "applyEndPatternLast": 1,
+          "begin": "\\$\\w",
+          "end": "(?=\\W)",
+          "name": "variable.other.interpolated.groovy",
+          "patterns": [
+            { "match": "\\w", "name": "variable.other.interpolated.groovy" },
+            { "match": "\\.", "name": "keyword.other.dereference.groovy" }
+          ]
+        },
+        {
+          "begin": "\\$\\{",
+          "captures": { "0": { "name": "punctuation.section.embedded.groovy" } },
+          "end": "\\}",
+          "name": "source.groovy.embedded.source",
+          "patterns": [
+            {
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [{ "include": "$self" }]
+            }
+          ]
+        }
+      ]
+    },
+    "dollar-slashy-string": {
+      "name": "string.quoted.dollar.slashy.groovy",
+      "begin": "\\$/",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.groovy" }
+      },
+      "end": "/\\$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.groovy" }
+      },
+      "patterns": [
+        { "include": "#string-interpolation" }
+      ]
+    },
+    "slashy-string": {
+      "name": "string.quoted.slashy.groovy",
+      "begin": "(?<=[\\[=(,;:+\\-*%<>!~^&|?\\s]|^)/(?![/*=])",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.groovy" }
+      },
+      "end": "/",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.groovy" }
+      },
+      "patterns": [
+        { "match": "\\\\/", "name": "constant.character.escape.groovy" },
+        { "include": "#string-interpolation" }
+      ]
+    },
+    "quoted-methods": {
+      "name": "meta.definition.method.quoted.groovy",
+      "begin": "(?x)(?:^|(?<=;|\\{))\\s*(?:(?:private|protected|public|static|final)\\s+)*(def)\\s+(?=[\"'])",
+      "beginCaptures": {
+        "1": { "name": "storage.type.def.groovy" }
+      },
+      "end": "\\}|(?=[^{\\n]*$)",
+      "patterns": [
+        {
+          "name": "meta.definition.method.signature.groovy",
+          "begin": "(\"|')",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.groovy" }
+          },
+          "contentName": "string.quoted.double.method-name.groovy",
+          "end": "(\\1)(?=\\s*\\()",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.string.end.groovy" }
+          },
+          "patterns": [
+            { "match": "\\\\.", "name": "constant.character.escape.groovy" },
+            { "match": "#\\w+", "name": "variable.other.spock-variable.groovy" },
+            { "include": "#string-interpolation" }
+          ]
+        },
+        {
+          "begin": "\\(",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.method-parameters.begin.groovy" }
+          },
+          "end": "\\)",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.method-parameters.end.groovy" }
+          },
+          "name": "meta.method.parameters.groovy"
+        },
+        {
+          "begin": "\\{",
+          "end": "(?=\\})",
+          "name": "meta.method.body.groovy",
+          "patterns": [
+            { "include": "source.groovy" }
+          ]
+        }
+      ]
+    }
+  }
+}
