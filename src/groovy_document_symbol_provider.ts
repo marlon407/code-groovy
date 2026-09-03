@@ -13,6 +13,7 @@ export default class GoDocumentSymbolProvider implements vscode.DocumentSymbolPr
           const symbolKinds: any = {
             "class": vscode.SymbolKind.Class,
             "def": vscode.SymbolKind.Function,
+            "closure": vscode.SymbolKind.Method,
             "public": vscode.SymbolKind.Function,
             "private": vscode.SymbolKind.Function,
             "protected": vscode.SymbolKind.Function
