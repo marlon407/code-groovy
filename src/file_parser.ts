@@ -59,7 +59,11 @@ export default class FileParser {
 
 /** TagLib / field closures: `def myTag = { attrs, body ->` */
 const closureRegEx = /^\s*(?:(?:public|private|protected)\s+)?def\s+([A-Za-z_]\w*)\s*=\s*\{/;
-const functionRegEx = /(def|public|private|protected|boolean|double|string|int|long|integer|void)+\s+.*\s*[a-z]*\(.*\)*\{/i;
+/**
+ * Methods with optional modifiers, return type (including generics like List<Map>),
+ * name, parameter list, and opening brace.
+ */
+const functionRegEx = /^\s*(?:(?:public|private|protected|static)\s+)*(?:def|[A-Za-z_][\w.]*(?:\s*<[^>{;]+>)?)\s+([A-Za-z_]\w*)\s*\([^;{]*\)\s*\{/;
 const dependeceRegEx = /def+\s+.*Service/i;
 
 class LineParse {
@@ -97,8 +101,8 @@ class LineParse {
       return match ? match[1] : undefined;
     }
     if (blockType == "def") {
-      let name = this.line.split('(')[0].replace(/(def|public|private|protected)/i, "").trim();
-      return name;
+      const match = this.line.match(functionRegEx);
+      return match ? match[1] : undefined;
     }
     return undefined
   }

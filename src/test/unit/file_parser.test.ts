@@ -56,4 +56,27 @@ class DemoTagLib {
 			['springSecurityService']
 		);
 	});
+
+	test('includes methods with Map and List<Map> return types in outline', () => {
+		const text = `
+class Sample {
+    Map somefunc ( args ) {
+        return someMap
+    }
+
+    List<Map> otherFunc ( args ) {
+        return someList
+    }
+
+    String plain() {
+        return "x"
+    }
+}
+`;
+		const methods = new FileParser(text)
+			.symbol_informations()
+			.filter((s: any) => s.type === 'def')
+			.map((s: any) => s.name);
+		assert.deepStrictEqual(methods, ['somefunc', 'otherFunc', 'plain']);
+	});
 });
