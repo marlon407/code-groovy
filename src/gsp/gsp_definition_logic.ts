@@ -1,6 +1,11 @@
 import { DefinitionTarget, resolveDefinitions } from '../groovy/definition_resolver';
 import { ClassIndexStore } from '../groovy/class_index_store';
 import { GrailsArtifactIndex } from '../groovy/grails_artifact_index';
+import {
+	findAttributeValueAtPosition,
+	findOpenTagBefore,
+	resolveGspResourcePath
+} from './gsp_resource_path_logic';
 import { ProjectTagLibTag } from './taglib_parser';
 
 export interface GspDefinitionContext {
@@ -119,6 +124,22 @@ function findRegionContaining(
 export function resolveGspDefinitions(context: GspDefinitionContext): DefinitionTarget[] {
 	const lines = context.documentText.split('\n');
 	const lineText = lines[context.line] ?? '';
+
+	// template="/..." / src="..." on g:render / asset:* → open the view or asset file
+	const attr = findAttributeValueAtPosition(lineText, context.character);
+	if (attr && context.workspaceRoot) {
+		const openTag = findOpenTagBefore(lineText, context.character);
+		const resourcePath = resolveGspResourcePath({
+			attrName: attr.name,
+			attrValue: attr.value,
+			tag: openTag,
+			workspaceRoot: context.workspaceRoot
+		});
+		if (resourcePath) {
+			return [{ uri: resourcePath, line: 0, column: 0, label: attr.value }];
+		}
+	}
+
 	const tag = findTagAtPosition(lineText, context.character);
 	if (tag) {
 		// XML-style <g:createLink> / <demoUI:x>. Core g: tags with no project TagLib → no target
