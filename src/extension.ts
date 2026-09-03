@@ -33,10 +33,13 @@ export function activate(context: vscode.ExtensionContext) {
     void tagLibIndex.start(context);
 
     classIndex = new ClassIndex();
+    classIndex.setGspTagsProvider(() => tagLibIndex.getTags());
     context.subscriptions.push(classIndex);
     context.subscriptions.push(
       vscode.commands.registerCommand('cgroovy.showIndexOutput', () => classIndex?.showIndexOutput()),
       vscode.commands.registerCommand('cgroovy.rebuildIndex', () => classIndex?.rebuildIndex()),
+      // Non-embedded GSP (HTML-style <ns:tag>). Embedded `${}` is handled by the Groovy
+      // DefinitionProvider, which VS Code routes into source.groovy regions.
       vscode.languages.registerDefinitionProvider(
         { language: 'gsp' },
         new GspDefinitionProvider(tagLibIndex, classIndex)
