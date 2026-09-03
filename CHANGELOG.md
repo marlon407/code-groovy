@@ -4,6 +4,7 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+- Support Ctrl+click / Go to Definition in `.gsp` for project TagLib tags and Groovy inside `${...}` / `<%...%>`
 - Point Grails `g:` tag hover/reference links at the legacy GSP docs (`docs-legacy-gsp`) instead of the broken `/docs/latest/ref/Tags/` URLs
 - Support F2 rename for identifiers in the current Groovy file (skips comments/strings; same-file only)
 - Highlight Grails tags (`g:if`, etc.) correctly when nested inside an HTML open tag in `.gsp`
