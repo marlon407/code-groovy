@@ -12,6 +12,7 @@ import { IndexStatusBar } from './index_status';
 import { listClassFqnsFromJar } from './jar_class_scanner';
 import { MethodCompletionProvider } from './method_completion_provider';
 import { MethodIndexStore } from './method_index_store';
+import { RenameProvider } from './rename_provider';
 import { indexWorkspaceDocument } from './workspace_symbol_index';
 
 const CACHE_KEY = 'codeGroovy.classpathIndex.v2';
@@ -40,6 +41,7 @@ export class ClassIndex implements vscode.Disposable {
 		this.artifactIndex,
 		() => this.lastClasspathJars
 	);
+	private readonly renameProvider = new RenameProvider();
 	private readonly importOrderDiagnostics = new ImportOrderDiagnostics();
 	private readonly disposables: vscode.Disposable[] = [];
 	private sourceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -85,6 +87,10 @@ export class ClassIndex implements vscode.Disposable {
 			vscode.languages.registerHoverProvider(
 				{ language: 'groovy' },
 				new GroovydocHoverProvider(this.store)
+			),
+			vscode.languages.registerRenameProvider(
+				{ language: 'groovy' },
+				this.renameProvider
 			)
 		);
 
