@@ -7,6 +7,7 @@ import { indexWorkspaceDocument } from '../../groovy/workspace_symbol_index';
 import {
 	findEmbeddedGroovyAtOffset,
 	findTagAtPosition,
+	findTagLibCallAtPosition,
 	resolveGspDefinitions
 } from '../../gsp/gsp_definition_logic';
 import { parseTagLibSource } from '../../gsp/taglib_parser';
@@ -82,6 +83,45 @@ suite('gsp_definition_logic', () => {
 			...buildStores()
 		});
 		assert.strictEqual(targets.length, 0);
+	});
+
+	test('detects g.createLink-style TagLib calls in embedded Groovy', () => {
+		const embedded = 'g.createLink(action: formAction)';
+		assert.deepStrictEqual(findTagLibCallAtPosition(embedded, embedded.indexOf('createLink') + 2), {
+			namespace: 'g',
+			method: 'createLink'
+		});
+	});
+
+	test('does not treat g.createLink as a file path / class named G', () => {
+		const documentText = 'action="${g.createLink(action: formAction)}" method="POST"';
+		const targets = resolveGspDefinitions({
+			documentText,
+			line: 0,
+			character: documentText.indexOf('createLink') + 3,
+			sourcePath: '/tmp/view.gsp',
+			tags: loadTags(),
+			...buildStores()
+		});
+		assert.strictEqual(targets.length, 0);
+		assert.ok(targets.every(target => !target.uri.includes('createLink(action')));
+	});
+
+	test('resolves project TagLib calls like demoUI.accountLink inside ${}', () => {
+		const tags = loadTags();
+		const account = tags.find(tag => tag.method === 'accountLink')!;
+		const documentText = '${demoUI.accountLink(href: url)}';
+		const targets = resolveGspDefinitions({
+			documentText,
+			line: 0,
+			character: documentText.indexOf('accountLink') + 2,
+			sourcePath: '/tmp/view.gsp',
+			tags,
+			...buildStores()
+		});
+		assert.strictEqual(targets.length, 1);
+		assert.strictEqual(targets[0].uri, tagLibPath);
+		assert.strictEqual(targets[0].line, account.methodLine);
 	});
 
 	test('resolves types/methods inside ${} via Groovy definition resolver', () => {
