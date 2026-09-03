@@ -13,6 +13,7 @@ import { listClassFqnsFromJar } from './jar_class_scanner';
 import { MethodCompletionProvider } from './method_completion_provider';
 import { MethodIndexStore } from './method_index_store';
 import { RenameProvider } from './rename_provider';
+import { ProjectTagLibTag } from '../gsp/taglib_parser';
 import { indexWorkspaceDocument } from './workspace_symbol_index';
 
 const CACHE_KEY = 'codeGroovy.classpathIndex.v2';
@@ -36,10 +37,12 @@ export class ClassIndex implements vscode.Disposable {
 	private readonly completionProvider = new ImportCompletionProvider(this.store);
 	private readonly methodCompletionProvider = new MethodCompletionProvider(this.artifactIndex);
 	private readonly codeActionProvider = new ImportCodeActionProvider(this.store);
+	private getGspTags: () => ProjectTagLibTag[] = () => [];
 	private readonly definitionProvider = new DefinitionProvider(
 		this.store,
 		this.artifactIndex,
-		() => this.lastClasspathJars
+		() => this.lastClasspathJars,
+		() => this.getGspTags()
 	);
 	private readonly renameProvider = new RenameProvider();
 	private readonly importOrderDiagnostics = new ImportOrderDiagnostics();
@@ -143,6 +146,11 @@ export class ClassIndex implements vscode.Disposable {
 
 	getClasspathJars(): string[] {
 		return this.lastClasspathJars;
+	}
+
+	/** Wire project TagLib index so embedded Groovy in `.gsp` can resolve `ns.method` calls. */
+	setGspTagsProvider(getTags: () => ProjectTagLibTag[]): void {
+		this.getGspTags = getTags;
 	}
 
 	dispose(): void {
