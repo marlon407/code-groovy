@@ -5,6 +5,7 @@ import * as path from 'path';
 import {
 	findAttributeValueAtPosition,
 	findOpenTagBefore,
+	listResourceAttributeValues,
 	resolveGspResourcePath
 } from '../../gsp/gsp_resource_path_logic';
 
@@ -16,6 +17,9 @@ suite('gsp_resource_path_logic', () => {
 		assert.strictEqual(hit!.name, 'template');
 		assert.strictEqual(hit!.value, '/tracking/googleTagManagerScript');
 		assert.strictEqual(findAttributeValueAtPosition(line, line.indexOf('render')), undefined);
+		const listed = listResourceAttributeValues(line);
+		assert.strictEqual(listed.length, 1);
+		assert.strictEqual(line.slice(listed[0].valueStart, listed[0].valueEnd), listed[0].value);
 	});
 
 	test('finds open tag before an attribute', () => {

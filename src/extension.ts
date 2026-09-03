@@ -7,6 +7,7 @@ import { ensureGspEmmetCoexistence } from './gsp/gsp_emmet_coexistence';
 import { ClassIndex } from './groovy/class_index';
 import { registerJarContentProvider } from './groovy/jar_content_provider';
 import { GspDefinitionProvider } from './gsp/gsp_definition_provider';
+import { GspResourceLinkProvider } from './gsp/gsp_resource_link_provider';
 import { TagLibIndex } from './gsp/taglib_index';
 
 let classIndex: ClassIndex | undefined;
@@ -43,6 +44,11 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.languages.registerDefinitionProvider(
         { language: 'gsp' },
         new GspDefinitionProvider(tagLibIndex, classIndex)
+      ),
+      // Full-range underline + click for template=/src=/url= (not just one path segment).
+      vscode.languages.registerDocumentLinkProvider(
+        { language: 'gsp' },
+        new GspResourceLinkProvider()
       )
     );
     void classIndex.start(context);

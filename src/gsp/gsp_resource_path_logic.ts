@@ -22,6 +22,13 @@ export function findAttributeValueAtPosition(
 	lineText: string,
 	character: number
 ): AttributeValueHit | undefined {
+	return listResourceAttributeValues(lineText).find(
+		hit => character >= hit.valueStart && character <= hit.valueEnd
+	);
+}
+
+export function listResourceAttributeValues(lineText: string): AttributeValueHit[] {
+	const hits: AttributeValueHit[] = [];
 	ATTR_VALUE_RE.lastIndex = 0;
 	let match: RegExpExecArray | null;
 	while ((match = ATTR_VALUE_RE.exec(lineText)) !== null) {
@@ -30,13 +37,11 @@ export function findAttributeValueAtPosition(
 			continue;
 		}
 		const value = match[3];
-		const valueStart = match.index + match[0].indexOf(value);
+		const valueStart = match.index + match[0].indexOf(match[2] + value) + 1; // after opening quote
 		const valueEnd = valueStart + value.length;
-		if (character >= valueStart && character <= valueEnd) {
-			return { name, value, valueStart, valueEnd };
-		}
+		hits.push({ name, value, valueStart, valueEnd });
 	}
-	return undefined;
+	return hits;
 }
 
 /** Nearest open tag to the left of `character` on the same line. */
