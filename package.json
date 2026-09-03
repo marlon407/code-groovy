@@ -44,6 +44,9 @@
             "emmet.includeLanguages": {
                 "gsp": "html"
             },
+            "[groovy]": {
+                "editor.links": true
+            },
             "[gsp]": {
                 "editor.snippetSuggestions": "top",
                 "editor.links": true,
