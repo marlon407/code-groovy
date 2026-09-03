@@ -19,34 +19,45 @@ export function parseTypeDeclaration(content: string): { name: string; parents: 
 	};
 }
 
-const GROOVY_PRIMITIVE_AND_COMMON_TYPES =
-	'void|boolean|Boolean|String|Map|List|Set|Integer|Long|Double|Float|Object|int|long|double|float|char|byte|short';
+const METHOD_DECL_LINE_RE =
+	/^\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:(?:public|private|protected|static|final|synchronized|abstract)\s+)*(?:def|(?:void|boolean|Boolean|String|Map|List|Set|Integer|Long|Double|Float|Object|int|long|double|float|char|byte|short)|[A-Z][\w.<>,\[\]\s]*)\s+([a-zA-Z_]\w*)\s*\(/;
 
 export function findMethodInText(content: string, methodName: string): MethodLocation[] {
-	const escaped = escapeRegex(methodName);
-	const patterns = [
-		new RegExp(
-			`^\\s*(?:@\\w+(?:\\([^)]*\\))?\\s*)*(?:(?:public|private|protected|static|final|synchronized)\\s+)*def\\s+${escaped}\\s*\\(`
-		),
-		new RegExp(
-			`^\\s*(?:@\\w+(?:\\([^)]*\\))?\\s*)*(?:(?:public|private|protected|static|final|synchronized)\\s+)*(?:${GROOVY_PRIMITIVE_AND_COMMON_TYPES})\\s+${escaped}\\s*\\(`
-		),
-		new RegExp(
-			`^\\s*(?:@\\w+(?:\\([^)]*\\))?\\s*)*(?:(?:public|private|protected|static|final|synchronized)\\s+)*[A-Z][\\w.<>,\\[\\]\\s]*\\s+${escaped}\\s*\\(`
-		)
-	];
+	return listMethodsInText(content).filter(loc => loc.name === methodName).map(loc => ({
+		filePath: loc.filePath,
+		line: loc.line,
+		column: loc.column
+	}));
+}
 
-	const locations: MethodLocation[] = [];
+export interface ListedMethod {
+	name: string;
+	filePath: string;
+	line: number;
+	column: number;
+	className?: string;
+}
+
+export function listMethodsInText(content: string): ListedMethod[] {
+	const locations: ListedMethod[] = [];
 	const lines = content.split('\n');
+	const typeDecl = parseTypeDeclaration(content);
+	const ownClassName = typeDecl?.name;
 
 	for (let line = 0; line < lines.length; line++) {
 		const text = lines[line];
-		if (!patterns.some(pattern => pattern.test(text))) {
+		const match = text.match(METHOD_DECL_LINE_RE);
+		if (!match) {
 			continue;
 		}
-		const column = text.search(new RegExp(`\\b${escaped}\\b`));
+		const name = match[1];
+		// Skip constructors matching the enclosing type name.
+		if (ownClassName && name === ownClassName) {
+			continue;
+		}
+		const column = text.search(new RegExp(`\\b${escapeRegex(name)}\\s*\\(`));
 		if (column >= 0) {
-			locations.push({ filePath: '', line, column });
+			locations.push({ name, filePath: '', line, column, className: ownClassName });
 		}
 	}
 
@@ -61,10 +72,30 @@ export function findMethodInClassHierarchy(
 	visited: Set<string> = new Set(),
 	depth = 0
 ): MethodLocation[] {
+	return listMethodsInClassHierarchy(readFile, findEntries, className, visited, depth)
+		.filter(method => method.name === methodName)
+		.map(method => ({
+			filePath: method.filePath,
+			line: method.line,
+			column: method.column
+		}));
+}
+
+/** Lists methods on a type and its parents; local declarations win over inherited names. */
+export function listMethodsInClassHierarchy(
+	readFile: (filePath: string) => string | undefined,
+	findEntries: (className: string) => Array<{ filePath: string }>,
+	className: string,
+	visited: Set<string> = new Set(),
+	depth = 0
+): ListedMethod[] {
 	if (!className || visited.has(className) || depth > MAX_HIERARCHY_DEPTH) {
 		return [];
 	}
 	visited.add(className);
+
+	const byName = new Map<string, ListedMethod>();
+	let parents: string[] = [];
 
 	for (const entry of findEntries(className)) {
 		const content = readFile(entry.filePath);
@@ -72,41 +103,36 @@ export function findMethodInClassHierarchy(
 			continue;
 		}
 
-		const local = findMethodInText(content, methodName).map(loc => ({
-			...loc,
-			filePath: entry.filePath
-		}));
-		if (local.length > 0) {
-			return local;
+		for (const method of listMethodsInText(content)) {
+			if (!byName.has(method.name)) {
+				byName.set(method.name, {
+					...method,
+					filePath: entry.filePath,
+					className
+				});
+			}
 		}
 
-		const typeDecl = parseTypeDeclaration(content);
-		if (typeDecl) {
-			const inherited = findMethodInParents(readFile, findEntries, typeDecl.parents, methodName, visited, depth + 1);
-			if (inherited.length > 0) {
-				return inherited;
+		if (parents.length === 0) {
+			parents = parseTypeDeclaration(content)?.parents ?? [];
+		}
+	}
+
+	for (const parent of parents) {
+		for (const inherited of listMethodsInClassHierarchy(
+			readFile,
+			findEntries,
+			parent,
+			visited,
+			depth + 1
+		)) {
+			if (!byName.has(inherited.name)) {
+				byName.set(inherited.name, inherited);
 			}
 		}
 	}
 
-	return [];
-}
-
-function findMethodInParents(
-	readFile: (filePath: string) => string | undefined,
-	findEntries: (className: string) => Array<{ filePath: string }>,
-	parents: string[],
-	methodName: string,
-	visited: Set<string>,
-	depth: number
-): MethodLocation[] {
-	for (const parent of parents) {
-		const found = findMethodInClassHierarchy(readFile, findEntries, parent, methodName, visited, depth);
-		if (found.length > 0) {
-			return found;
-		}
-	}
-	return [];
+	return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function splitTypeNames(segment?: string): string[] {
