@@ -105,7 +105,11 @@ suite('definition_resolver imports from jars', () => {
 		}
 		const resolved = resolveJarTypeDefinition(webCommonJar!, 'org.grails.web.json.JSONObject');
 		assert.ok(resolved);
-		assert.ok(resolved!.uri.includes('JSONObject.class'));
+		// Prefer -sources.jar (.java) when Gradle has it; fall back to .class otherwise.
+		assert.ok(
+			resolved!.uri.includes('JSONObject.java') || resolved!.uri.includes('JSONObject.class'),
+			`unexpected URI: ${resolved!.uri}`
+		);
 	});
 
 	test('prefers workspace source over classpath jar class entry for imported type', function () {
