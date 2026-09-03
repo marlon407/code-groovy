@@ -141,6 +141,10 @@ export class ClassIndex implements vscode.Disposable {
 		return this.artifactIndex;
 	}
 
+	getClasspathJars(): string[] {
+		return this.lastClasspathJars;
+	}
+
 	dispose(): void {
 		if (this.sourceTimer) {
 			clearTimeout(this.sourceTimer);

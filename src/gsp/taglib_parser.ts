@@ -8,11 +8,16 @@ export interface ProjectTagLibTag {
 	/** True when the closure invokes `body()` / `body.call`, so the tag needs content. */
 	usesBody: boolean;
 	sourcePath: string;
+	/** 0-based line of `def methodName = {` in the TagLib source. */
+	methodLine: number;
+	/** 0-based column of the method name in the TagLib source. */
+	methodColumn: number;
 }
 
 const NAMESPACE_RE = /static\s+namespace\s*=\s*['"]([^'"]+)['"]/;
 const CLASS_RE = /class\s+(\w+TagLib)\b/;
-const TAG_RE = /^\s*def\s+([A-Za-z_]\w*)\s*=\s*\{/gm;
+// Use [ \t]* (not \s*) so a blank line's newline is not swallowed into the next tag match.
+const TAG_RE = /^[ \t]*def\s+([A-Za-z_]\w*)\s*=\s*\{/gm;
 const ATTR_RE = /attrs(?:\.containsKey\(\s*['"](\w+)['"]\s*\)|\[\s*['"](\w+)['"]\s*\]|\.(\w+))/g;
 const ATTR_LIST_RE = /\w*[Aa]ttributes?\w*\s*=\s*\[([^\]]*)\]/g;
 const STRING_LITERAL_RE = /['"]([A-Za-z_]\w*)['"]/g;
@@ -46,13 +51,20 @@ export function parseTagLibSource(text: string, sourcePath: string): ProjectTagL
 		const block = extractClosureBody(text, blockStart);
 		const attributes = extractAttributes(block);
 
+		const before = text.slice(0, match.index);
+		const methodLine = before.split('\n').length - 1;
+		const lineStart = before.lastIndexOf('\n') + 1;
+		const methodColumn = Math.max(0, match.index + match[0].indexOf(tagName) - lineStart);
+
 		tags.push({
 			name: `${namespace}:${tagName}`,
 			namespace,
 			method: tagName,
 			attributes,
 			usesBody: BODY_USE_RE.test(block),
-			sourcePath
+			sourcePath,
+			methodLine,
+			methodColumn
 		});
 	}
 
