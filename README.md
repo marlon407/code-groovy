@@ -13,7 +13,9 @@ Features
 - Groovy Ctrl+click Go to Definition for classes, methods, services, and supertype methods
 - Groovy organize service injections
 - Groovy code snippets
-- Groovy symbol support
+- Groovy symbol support (including TagLib closures)
+- Groovy Groovydoc / Javadoc hover docs
+- Groovy syntax highlighting (slashy strings, Spock quoted methods)
 - GSP syntax
 - GSP snippets
 
@@ -25,6 +27,11 @@ Extension Settings
 
 Known Issues
 ===============
+
+License
+===============
+
+This project is licensed under the [MIT License](LICENSE).
 
 Contributing
 ===============

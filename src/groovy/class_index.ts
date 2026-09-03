@@ -7,6 +7,7 @@ import { GrailsArtifactIndex, indexGroovyFile } from './grails_artifact_index';
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
 import { ImportOrderDiagnostics } from './import_order_diagnostics';
+import { GroovydocHoverProvider } from './groovydoc_hover_provider';
 import { IndexStatusBar } from './index_status';
 import { listClassFqnsFromJar } from './jar_class_scanner';
 import { MethodIndexStore } from './method_index_store';
@@ -73,6 +74,10 @@ export class ClassIndex implements vscode.Disposable {
 			vscode.languages.registerDefinitionProvider(
 				{ language: 'groovy' },
 				this.definitionProvider
+			),
+			vscode.languages.registerHoverProvider(
+				{ language: 'groovy' },
+				new GroovydocHoverProvider(this.store)
 			)
 		);
 

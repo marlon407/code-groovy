@@ -4,6 +4,7 @@
     "description": "Groovy support for VSCode",
     "version": "0.1.3",
     "publisher": "marlon407",
+    "license": "MIT",
     "engines": {
         "vscode": "^1.74.0",
         "node": ">=24"
@@ -48,6 +49,12 @@
                 "emmet.triggerExpansionOnTab": false,
                 "emmet.showAbbreviationSuggestions": false,
                 "emmet.showExpandedAbbreviation": "never"
+            },
+            "files.associations": {
+                "*.groovy": "groovy",
+                "*.gvy": "groovy",
+                "*.gy": "groovy",
+                "*.gsh": "groovy"
             }
         },
         "html": {
@@ -117,6 +124,20 @@
         ],
         "languages": [
             {
+                "id": "groovy",
+                "aliases": [
+                    "Groovy"
+                ],
+                "extensions": [
+                    ".groovy",
+                    ".gvy",
+                    ".gy",
+                    ".gsh"
+                ],
+                "firstLine": "^#!.*\\bgroovy\\b",
+                "configuration": "./language-configuration-groovy.json"
+            },
+            {
                 "id": "gsp",
                 "aliases": [
                     "Groovy Server Pages"
@@ -129,6 +150,18 @@
         ],
         "grammars": [
             {
+                "language": "groovy",
+                "scopeName": "source.groovy",
+                "path": "./syntaxes/groovy.tmLanguage.json"
+            },
+            {
+                "scopeName": "source.groovy.code-groovy.injection",
+                "path": "./syntaxes/groovy.injection.tmLanguage.json",
+                "injectTo": [
+                    "source.groovy"
+                ]
+            },
+            {
                 "language": "gsp",
                 "scopeName": "text.html.gsp",
                 "path": "./syntaxes/gsp.tmLanguage",
@@ -137,6 +170,13 @@
                     "source.js": "javascript",
                     "source.groovy": "groovy"
                 }
+            },
+            {
+                "scopeName": "text.html.gsp.grails-mid-tag.injection",
+                "path": "./syntaxes/gsp.grails-mid-tag.injection.tmLanguage.json",
+                "injectTo": [
+                    "text.html.gsp"
+                ]
             }
         ]
     },
