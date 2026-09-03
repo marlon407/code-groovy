@@ -1,0 +1,108 @@
+{
+  "scopeName": "text.html.gsp.grails-mid-tag.injection",
+  "injectionSelector": "L:meta.tag -comment",
+  "patterns": [
+    { "include": "#grails-paired-tag" },
+    { "include": "#grails-self-closing-tag" }
+  ],
+  "repository": {
+    "grails-paired-tag": {
+      "comment": "Paired Grails tag inside an HTML open tag: <g:if ...> body </g:if>. Double-captures mirror text.html.basic unrecognized tags so themes color open/close the same.",
+      "name": "meta.tag.other.$2.html",
+      "begin": "(<)(([A-Za-z_][\\w.-]*:[A-Za-z_][\\w.-]*))\\b(?![^>]*/>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "invalid.illegal.unrecognized-tag.html" }
+      },
+      "end": "(</)((\\2))(\\s*>)",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "invalid.illegal.unrecognized-tag.html" },
+        "4": { "name": "punctuation.definition.tag.end.html" }
+      },
+      "patterns": [
+        {
+          "begin": "\\G",
+          "end": "(>)",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.end.html" }
+          },
+          "patterns": [
+            { "include": "#grails-attribute" }
+          ]
+        }
+      ]
+    },
+    "grails-self-closing-tag": {
+      "name": "meta.tag.other.$2.html",
+      "begin": "(<)(([A-Za-z_][\\w.-]*:[A-Za-z_][\\w.-]*))\\b",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "invalid.illegal.unrecognized-tag.html" }
+      },
+      "end": "(/>)",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.end.html" }
+      },
+      "patterns": [
+        { "include": "#grails-attribute" }
+      ]
+    },
+    "grails-attribute": {
+      "patterns": [
+        {
+          "match": "\\s+([A-Za-z_:][\\w:.-]*)(=)",
+          "captures": {
+            "1": { "name": "entity.other.attribute-name.html" },
+            "2": { "name": "punctuation.separator.key-value.html" }
+          }
+        },
+        {
+          "begin": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.html" }
+          },
+          "end": "\"",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.html" }
+          },
+          "name": "string.quoted.double.html",
+          "patterns": [
+            { "include": "#embedded-groovy" }
+          ]
+        },
+        {
+          "begin": "'",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.html" }
+          },
+          "end": "'",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.html" }
+          },
+          "name": "string.quoted.single.html",
+          "patterns": [
+            { "include": "#embedded-groovy" }
+          ]
+        }
+      ]
+    },
+    "embedded-groovy": {
+      "begin": "\\$\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.embedded.groovy" }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": { "name": "punctuation.section.embedded.groovy" }
+      },
+      "name": "source.groovy.embedded.gsp",
+      "patterns": [
+        { "include": "source.groovy" }
+      ]
+    }
+  }
+}
