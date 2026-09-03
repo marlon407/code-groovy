@@ -36,6 +36,8 @@ suite('taglib_parser', () => {
 
 		const accountLink = tags.find(t => t.method === 'accountLink')!;
 		assert.strictEqual(accountLink.name, 'demo:accountLink');
+		assert.strictEqual(accountLink.className, 'DemoTagLib');
+		assert.strictEqual(accountLink.beanName, 'demoTagLib');
 		assert.strictEqual(accountLink.usesBody, false);
 		assert.deepStrictEqual(accountLink.attributes, ['class', 'href', 'isAtlas', 'target']);
 		assert.ok(Number.isInteger(accountLink.methodLine));

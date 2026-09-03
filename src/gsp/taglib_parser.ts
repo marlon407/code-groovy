@@ -8,6 +8,10 @@ export interface ProjectTagLibTag {
 	/** True when the closure invokes `body()` / `body.call`, so the tag needs content. */
 	usesBody: boolean;
 	sourcePath: string;
+	/** Declaring class, e.g. `PaymentTagLib`. */
+	className?: string;
+	/** Grails bean name, e.g. `paymentTagLib`. */
+	beanName?: string;
 	/** 0-based line of `def methodName = {` in the TagLib source. */
 	methodLine: number;
 	/** 0-based column of the method name in the TagLib source. */
@@ -31,8 +35,10 @@ const BODY_USE_RE = /\bbody\s*(?:\(|\.call\b)/;
 export function parseTagLibSource(text: string, sourcePath: string): ProjectTagLibTag[] {
 	const namespaceMatch = text.match(NAMESPACE_RE);
 	const classMatch = text.match(CLASS_RE);
+	const className = classMatch?.[1];
+	const beanName = className ? beanNameFromClassName(className) : undefined;
 	const namespace = namespaceMatch?.[1]
-		?? (classMatch ? namespaceFromClassName(classMatch[1]) : undefined);
+		?? (className ? namespaceFromClassName(className) : undefined);
 
 	if (!namespace) {
 		return [];
@@ -63,6 +69,8 @@ export function parseTagLibSource(text: string, sourcePath: string): ProjectTagL
 			attributes,
 			usesBody: BODY_USE_RE.test(block),
 			sourcePath,
+			className,
+			beanName,
 			methodLine,
 			methodColumn
 		});
@@ -77,6 +85,17 @@ function namespaceFromClassName(className: string): string {
 		return className;
 	}
 	return base.charAt(0).toLowerCase() + base.slice(1);
+}
+
+function beanNameFromClassName(className: string): string {
+	return className.charAt(0).toLowerCase() + className.slice(1);
+}
+
+/** `payment`, `paymentTagLib`, or `PaymentTagLib` all refer to the same TagLib. */
+export function tagMatchesReceiver(tag: ProjectTagLibTag, receiver: string): boolean {
+	return tag.namespace === receiver
+		|| tag.beanName === receiver
+		|| tag.className === receiver;
 }
 
 function extractClosureBody(text: string, start: number): string {

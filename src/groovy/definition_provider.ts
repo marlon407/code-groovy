@@ -4,6 +4,7 @@ import { GrailsArtifactIndex } from './grails_artifact_index';
 import { resolveDefinitions } from './definition_resolver';
 import { resolveGradleProjectRoot } from './classpath_resolver';
 import { resolveGspDefinitions } from '../gsp/gsp_definition_logic';
+import { resolveGroovyTagLibDefinitions } from '../gsp/groovy_taglib_navigation_logic';
 import { ProjectTagLibTag } from '../gsp/taglib_parser';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
@@ -39,6 +40,17 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		}
 
 		const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_]\w*/);
+		const tagLibTargets = resolveGroovyTagLibDefinitions({
+			documentText: document.getText(),
+			line: position.line,
+			character: position.character,
+			workspaceRoot,
+			tags: this.getGspTags()
+		});
+		if (tagLibTargets.length > 0) {
+			return toLocations(tagLibTargets);
+		}
+
 		if (!wordRange) {
 			return undefined;
 		}

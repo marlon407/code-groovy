@@ -50,7 +50,7 @@
     },
     "slashy-string": {
       "name": "string.quoted.slashy.groovy",
-      "begin": "(?<=[\\[=(,;:+\\-*%<>!~^&|?\\s]|^)/(?![/*=])",
+      "begin": "(?:^|(?<=[\\[=(,;:+\\-*%<>!~^&|?{])|(?<=\\b(?:return|case|throw|new|in|assert)\\b))\\s*/(?![/*=])",
       "beginCaptures": {
         "0": { "name": "punctuation.definition.string.begin.groovy" }
       },

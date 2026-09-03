@@ -13,6 +13,7 @@ import { listClassFqnsFromJar } from './jar_class_scanner';
 import { MethodCompletionProvider } from './method_completion_provider';
 import { MethodIndexStore } from './method_index_store';
 import { RenameProvider } from './rename_provider';
+import { GroovyTagLibLinkProvider } from '../gsp/groovy_taglib_link_provider';
 import { ProjectTagLibTag } from '../gsp/taglib_parser';
 import { indexWorkspaceDocument } from './workspace_symbol_index';
 
@@ -86,6 +87,10 @@ export class ClassIndex implements vscode.Disposable {
 			vscode.languages.registerDefinitionProvider(
 				{ language: 'groovy' },
 				this.definitionProvider
+			),
+			vscode.languages.registerDocumentLinkProvider(
+				{ language: 'groovy' },
+				new GroovyTagLibLinkProvider()
 			),
 			vscode.languages.registerHoverProvider(
 				{ language: 'groovy' },
