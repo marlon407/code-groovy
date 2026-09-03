@@ -4,6 +4,8 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+- Include methods with generic return types (e.g. `Map`, `List<Map>`) in document symbols / outline
+- Match square brackets `[` `]` in GSP bracket matching
 - Include TagLib-style closure assignments (`def myTag = { ... }`) in document symbols / outline
 - Auto-import Groovy/Java types from workspace source and Gradle/Maven JAR classpaths via IntelliSense and a Quick Fix
 - Rank auto-import suggestions so workspace types like `Customer` stay above longer JAR names such as `CustomerAccountDTO`
