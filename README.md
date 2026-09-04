@@ -2,9 +2,9 @@
 
 Groovy, Grails and GSP language support for Visual Studio Code and Cursor.
 
-[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/marlon407.code-groovy?label=marketplace)](https://marketplace.visualstudio.com/items?itemName=marlon407.code-groovy)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/marlon407.code-groovy)](https://marketplace.visualstudio.com/items?itemName=marlon407.code-groovy)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/marlon407.code-groovy)](https://marketplace.visualstudio.com/items?itemName=marlon407.code-groovy)
+[![Marketplace](https://vsmarketplacebadges.dev/version-short/marlon407.code-groovy.svg?label=marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=marlon407.code-groovy)
+[![Installs](https://vsmarketplacebadges.dev/installs-short/marlon407.code-groovy.svg?label=installs&color=blue)](https://marketplace.visualstudio.com/items?itemName=marlon407.code-groovy)
+[![Rating](https://vsmarketplacebadges.dev/rating-short/marlon407.code-groovy.svg?label=rating&color=blue)](https://marketplace.visualstudio.com/items?itemName=marlon407.code-groovy)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ![Screenshot](code-groovy-0.0.5.gif)
