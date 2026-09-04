@@ -39,7 +39,7 @@ suite('taglib_parser', () => {
 		assert.strictEqual(accountLink.className, 'DemoTagLib');
 		assert.strictEqual(accountLink.beanName, 'demoTagLib');
 		assert.strictEqual(accountLink.usesBody, false);
-		assert.deepStrictEqual(accountLink.attributes, ['class', 'href', 'featured', 'target']);
+		assert.deepStrictEqual(accountLink.attributes, ['class', 'featured', 'href', 'target']);
 		assert.ok(Number.isInteger(accountLink.methodLine));
 		assert.ok(accountLink.methodColumn >= 0);
 		const around = SAMPLE_TAGLIB.slice(

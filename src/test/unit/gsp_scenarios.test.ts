@@ -95,7 +95,7 @@ suite('gsp scenarios — project taglibs', () => {
 		assert.ok(!account.includes('</demoUI:accountLink>'));
 
 		const attrs = resolveTagLibCompletions('<demoUI:accountLink ', tags).map(i => i.label).sort();
-		assert.deepStrictEqual(attrs, ['class', 'href', 'featured', 'target']);
+		assert.deepStrictEqual(attrs, ['class', 'featured', 'href', 'target']);
 	});
 
 	test('methods that use body insert open/close tags', () => {

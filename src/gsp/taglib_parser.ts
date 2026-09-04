@@ -91,7 +91,7 @@ function beanNameFromClassName(className: string): string {
 	return className.charAt(0).toLowerCase() + className.slice(1);
 }
 
-/** `payment`, `catalogTagLib`, or `CatalogTagLib` all refer to the same TagLib. */
+/** `catalog`, `catalogTagLib`, or `CatalogTagLib` all refer to the same TagLib. */
 export function tagMatchesReceiver(tag: ProjectTagLibTag, receiver: string): boolean {
 	return tag.namespace === receiver
 		|| tag.beanName === receiver

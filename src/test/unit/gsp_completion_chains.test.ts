@@ -47,7 +47,7 @@ suite('gsp completion chains (fixtures)', () => {
 		assert.ok(methods.some(i => i.label === 'adminButton' && i.insertText.includes('</demoUI:adminButton>')));
 
 		const attrs = resolveTagLibCompletions('<demoUI:accountLink ', tags);
-		assert.deepStrictEqual(attrs.map(i => i.label).sort(), ['class', 'href', 'featured', 'target']);
+		assert.deepStrictEqual(attrs.map(i => i.label).sort(), ['class', 'featured', 'href', 'target']);
 	});
 
 	test('each scenario line from the .gsp fixture resolves without leftover prefixes', () => {
