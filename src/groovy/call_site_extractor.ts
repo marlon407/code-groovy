@@ -1,0 +1,46 @@
+export interface CallSiteRecord {
+	methodName: string;
+	receiverName: string | undefined;
+	sourcePath: string;
+	line: number;
+	column: number;
+}
+
+const CALL_SITE_RE = /\b(?:([A-Za-z_]\w*)\s*\.\s*)?([A-Za-z_]\w*)\s*\(/g;
+
+export function extractCallSites(text: string, sourcePath: string): CallSiteRecord[] {
+	const records: CallSiteRecord[] = [];
+	const lines = text.split(/\r\n|\r|\n/);
+
+	for (let lineNo = 0; lineNo < lines.length; lineNo++) {
+		const line = lines[lineNo];
+		if (!line.includes('(')) {
+			continue;
+		}
+		CALL_SITE_RE.lastIndex = 0;
+		let match: RegExpExecArray | null;
+		while ((match = CALL_SITE_RE.exec(line)) !== null) {
+			const [, receiverName, methodName] = match;
+			const methodStart = line.lastIndexOf(methodName, match.index + match[0].length - 1);
+			if (isInsideStringLiteral(line, methodStart)) {
+				continue;
+			}
+			records.push({
+				methodName,
+				receiverName,
+				sourcePath,
+				line: lineNo,
+				column: methodStart
+			});
+		}
+	}
+
+	return records;
+}
+
+function isInsideStringLiteral(line: string, index: number): boolean {
+	const prefix = line.slice(0, index);
+	const doubleQuotes = (prefix.match(/(?<!\\)"/g) || []).length;
+	const singleQuotes = (prefix.match(/(?<!\\)'/g) || []).length;
+	return doubleQuotes % 2 === 1 || singleQuotes % 2 === 1;
+}

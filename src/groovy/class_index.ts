@@ -3,6 +3,9 @@ import { ClassIndexStore, indexJarFqns, IndexedType, MAX_INDEXED_CLASSES } from 
 import { hashWorkspaceBuildFiles, resolveGradleProjectRoot, resolveProjectClasspath } from './classpath_resolver';
 import { detectGrailsModules, collectGrailsModuleSourceFiles } from './grails_module_detector';
 import { DefinitionProvider } from './definition_provider';
+import { ReferenceProvider } from './reference_provider';
+import { CallSiteIndexStore } from './call_site_index_store';
+import { extractCallSites, CallSiteRecord } from './call_site_extractor';
 import { GrailsArtifactIndex, indexGroovyFile } from './grails_artifact_index';
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
@@ -34,6 +37,7 @@ interface RefreshOptions {
 export class ClassIndex implements vscode.Disposable {
 	private readonly store = new ClassIndexStore();
 	private readonly methodStore = new MethodIndexStore();
+	private readonly callSiteIndex = new CallSiteIndexStore();
 	private readonly artifactIndex = new GrailsArtifactIndex();
 	private readonly completionProvider = new ImportCompletionProvider(this.store);
 	private readonly methodCompletionProvider = new MethodCompletionProvider(this.artifactIndex);
@@ -43,8 +47,10 @@ export class ClassIndex implements vscode.Disposable {
 		this.store,
 		this.artifactIndex,
 		() => this.lastClasspathJars,
+		this.callSiteIndex,
 		() => this.getGspTags()
 	);
+	private readonly referenceProvider = new ReferenceProvider(this.callSiteIndex);
 	private readonly renameProvider = new RenameProvider();
 	private readonly importOrderDiagnostics = new ImportOrderDiagnostics();
 	private readonly disposables: vscode.Disposable[] = [];
@@ -87,6 +93,10 @@ export class ClassIndex implements vscode.Disposable {
 			vscode.languages.registerDefinitionProvider(
 				{ language: 'groovy' },
 				this.definitionProvider
+			),
+			vscode.languages.registerReferenceProvider(
+				{ language: 'groovy' },
+				this.referenceProvider
 			),
 			vscode.languages.registerDocumentLinkProvider(
 				{ language: 'groovy' },
@@ -224,6 +234,7 @@ export class ClassIndex implements vscode.Disposable {
 
 		const types: IndexedType[] = [];
 		const methods: ReturnType<typeof indexWorkspaceDocument>['methods'] = [];
+		const callSites: CallSiteRecord[] = [];
 		this.artifactIndex.clear();
 		for (let index = 0; index < filePaths.length; index++) {
 			const filePath = filePaths[index];
@@ -233,6 +244,7 @@ export class ClassIndex implements vscode.Disposable {
 				const indexed = indexWorkspaceDocument(text, filePath);
 				types.push(...indexed.types);
 				methods.push(...indexed.methods);
+				callSites.push(...extractCallSites(text, filePath));
 				if (filePath.endsWith('.groovy')) {
 					this.artifactIndex.addEntry(indexGroovyFile(filePath));
 				}
@@ -245,8 +257,10 @@ export class ClassIndex implements vscode.Disposable {
 		}
 		this.store.removeBySource('workspace');
 		this.methodStore.clear();
+		this.callSiteIndex.clear();
 		this.store.add(types);
 		this.methodStore.add(methods);
+		this.callSiteIndex.add(callSites);
 
 		if (!showProgress && this.initialIndexComplete) {
 			this.finalizeStatus();

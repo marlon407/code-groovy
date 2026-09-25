@@ -6,19 +6,24 @@ import { resolveGradleProjectRoot } from './classpath_resolver';
 import { resolveGspDefinitions } from '../gsp/gsp_definition_logic';
 import { resolveGroovyTagLibDefinitions } from '../gsp/groovy_taglib_navigation_logic';
 import { ProjectTagLibTag } from '../gsp/taglib_parser';
+import * as path from 'path';
+import { findWordOccurrences, grailsFieldNameForClass, callSiteToLocation } from './reference_provider';
+import { CallSiteIndexStore } from './call_site_index_store';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
 	constructor(
 		private readonly classStore: ClassIndexStore,
 		private readonly artifactIndex: GrailsArtifactIndex,
 		private readonly getClasspathJars: () => string[],
+		private readonly callSiteIndex: CallSiteIndexStore,
 		private readonly getGspTags: () => ProjectTagLibTag[] = () => []
 	) {}
 
-	provideDefinition(
+	async provideDefinition(
 		document: vscode.TextDocument,
-		position: vscode.Position
-	): vscode.Location | vscode.Location[] | undefined {
+		position: vscode.Position,
+		token: vscode.CancellationToken
+	): Promise<vscode.Location | vscode.Location[] | undefined> {
 		const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 		const workspaceRoot = workspaceFolder ? resolveGradleProjectRoot(workspaceFolder) : undefined;
 
@@ -55,11 +60,12 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			return undefined;
 		}
 
+		const word = document.getText(wordRange);
 		const targets = resolveDefinitions({
 			documentText: document.getText(),
 			line: position.line,
 			character: position.character,
-			word: document.getText(wordRange),
+			word,
 			wordStart: wordRange.start.character,
 			sourcePath: document.uri.fsPath,
 			workspaceRoot,
@@ -68,7 +74,33 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			artifactIndex: this.artifactIndex
 		});
 
-		return toLocations(targets);
+		const declLine = wordRange.start.line;
+		const meaningfulTargets = targets.filter(target => !(target.uri === document.uri.fsPath && target.line === declLine));
+
+		if (meaningfulTargets.length > 0) {
+			return toLocations(meaningfulTargets);
+		}
+
+		const declaringClassName = path.basename(document.uri.fsPath, path.extname(document.uri.fsPath));
+		const receiverFieldName = grailsFieldNameForClass(declaringClassName);
+
+		let occurrences: vscode.Location[] = this.callSiteIndex.lookup(word, receiverFieldName).map(callSiteToLocation);
+		if (occurrences.length === 0) {
+			occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
+		}
+		if (occurrences.length === 0) {
+			occurrences = await findWordOccurrences(word, receiverFieldName, token);
+		}
+		if (occurrences.length === 0) {
+			occurrences = await findWordOccurrences(word, undefined, token);
+		}
+		const declUri = document.uri.toString();
+		const usages = occurrences.filter(location => !(location.uri.toString() === declUri && location.range.start.line === declLine));
+
+		if (usages.length === 0) {
+			return undefined;
+		}
+		return usages.length === 1 ? usages[0] : usages;
 	}
 }
 
