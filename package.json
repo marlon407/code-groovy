@@ -85,6 +85,11 @@
                         "api"
                     ],
                     "markdownDescription": "Gradle submodules to index when settings.gradle is found."
+                },
+                "codeGroovy.importOrder.warnings": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show **Problems** warnings when Groovy `import` lines are not in the same order as **Organize imports** would use. Set to `false` to hide import-order warnings only (other diagnostics are unchanged)."
                 }
             }
         },

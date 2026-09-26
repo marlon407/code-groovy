@@ -3,6 +3,10 @@ import { findOutOfOrderImports } from './import_order_logic';
 
 const DIAGNOSTIC_SOURCE = 'code-groovy';
 
+function isImportOrderWarningsEnabled(): boolean {
+	return vscode.workspace.getConfiguration('codeGroovy').get<boolean>('importOrder.warnings', true);
+}
+
 export class ImportOrderDiagnostics implements vscode.Disposable {
 	private readonly collection = vscode.languages.createDiagnosticCollection('codeGroovyImportOrder');
 	private readonly disposables: vscode.Disposable[] = [];
@@ -23,6 +27,15 @@ export class ImportOrderDiagnostics implements vscode.Disposable {
 			}),
 			vscode.workspace.onDidCloseTextDocument(document => {
 				this.collection.delete(document.uri);
+			}),
+			vscode.workspace.onDidChangeConfiguration(event => {
+				if (event.affectsConfiguration('codeGroovy.importOrder.warnings')) {
+					for (const document of vscode.workspace.textDocuments) {
+						if (document.languageId === 'groovy') {
+							this.refresh(document);
+						}
+					}
+				}
 			}),
 			vscode.languages.registerCodeActionsProvider(
 				{ language: 'groovy' },
@@ -76,6 +89,11 @@ export class ImportOrderDiagnostics implements vscode.Disposable {
 
 	private refresh(document: vscode.TextDocument): void {
 		if (document.languageId !== 'groovy' || document.isClosed) {
+			return;
+		}
+
+		if (!isImportOrderWarningsEnabled()) {
+			this.collection.set(document.uri, []);
 			return;
 		}
 
