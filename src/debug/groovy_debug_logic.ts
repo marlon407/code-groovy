@@ -212,7 +212,8 @@ export function isBootRunLikeGradleTask(gradleTask: string): boolean {
 }
 
 export function jdwpAgentLib(port: number = DEFAULT_DEBUG_PORT): string {
-	return `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:${port}`;
+	// Use 127.0.0.1 — `address=*:port` breaks on some JVMs (gethostbyname: unknown host).
+	return `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:${port}`;
 }
 
 export function gradleJavaExecJdwpInitScript(port: number = DEFAULT_DEBUG_PORT): string {

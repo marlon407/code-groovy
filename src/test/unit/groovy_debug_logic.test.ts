@@ -169,7 +169,7 @@ suite('groovy_debug_logic', () => {
 		const script = gradleJavaExecJdwpInitScript(5005);
 		assert.ok(script.includes('taskGraph.whenReady'));
 		assert.ok(script.includes('task.doFirst'));
-		assert.ok(script.includes('address=*:5005'));
+		assert.ok(script.includes('address=127.0.0.1:5005'));
 		assert.ok(script.includes('suspend=y'));
 	});
 
