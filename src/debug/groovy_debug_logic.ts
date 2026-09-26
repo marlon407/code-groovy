@@ -20,7 +20,7 @@ export interface GroovyDebugInput {
 	projectName?: string;
 	/** Pass `--debug-jvm` to bootRun (Spring Boot plugin only; breaks some Grails builds). */
 	useBootRunDebugJvm?: boolean;
-	/** Override app URL for readiness probe / browser (e.g. http://localhost:8083). */
+	/** Override app URL for readiness probe / browser (e.g. http://localhost:8080). */
 	serverUrl?: string;
 	openBrowserOnReady?: boolean;
 }

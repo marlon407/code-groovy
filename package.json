@@ -111,7 +111,7 @@
                 "codeGroovy.debug.serverUrl": {
                     "type": "string",
                     "default": "",
-                    "markdownDescription": "Optional app URL for readiness checks (e.g. `http://localhost:8083`). Leave empty to parse from Gradle output (`Grails application running at …`)."
+                    "markdownDescription": "Optional app URL for readiness checks (e.g. `http://localhost:8080`). Leave empty to parse from Gradle output (`Grails application running at …`)."
                 }
             }
         },
