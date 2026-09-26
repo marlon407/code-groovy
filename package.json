@@ -96,7 +96,7 @@
                 "codeGroovy.debug.attachTimeoutMs": {
                     "type": "number",
                     "default": 180000,
-                    "markdownDescription": "How long to wait for the Gradle JVM to open a JDWP debug port (`Listening for transport dt_socket`) before giving up."
+                    "markdownDescription": "Minimum time to wait for Gradle (compile + bootRun) and the app JVM to open JDWP (default port 5005). The extension waits at least 10 minutes on first launch; raise this if large projects need longer."
                 }
             }
         },

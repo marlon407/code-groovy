@@ -162,34 +162,64 @@ export function buildGradleDebugCommand(
 	try {
 		fs.writeFileSync(initFile, gradleJavaExecJdwpInitScript(port));
 	} catch {
+		const gradleArgs = input.gradleArgs || [];
+		const consolePlain = gradleArgs.some(arg => arg === '--console=plain' || arg.startsWith('--console='))
+			? []
+			: ['--console=plain'];
+		const bootDebug = bootRunDebugJvmFlags(gradleTask, gradleArgs);
 		return {
 			command: project.gradlew,
-			args: [gradleTask, ...(input.gradleArgs || [])],
+			args: [gradleTask, ...consolePlain, ...bootDebug, ...gradleArgs],
 			cwd: project.projectRoot
 		};
 	}
 
+	const gradleArgs = input.gradleArgs || [];
+	const consolePlain = gradleArgs.some(arg => arg === '--console=plain' || arg.startsWith('--console='))
+		? []
+		: ['--console=plain'];
+	const bootDebug = bootRunDebugJvmFlags(gradleTask, gradleArgs);
+
 	return {
 		command: project.gradlew,
-		args: [gradleTask, '-I', initFile, ...(input.gradleArgs || [])],
+		args: [gradleTask, ...consolePlain, ...bootDebug, '-I', initFile, ...gradleArgs],
 		cwd: project.projectRoot
 	};
 }
 
+/** Spring Boot / Grails bootRun: `--debug-jvm` enables JDWP on the app process (not the Gradle daemon). */
+export function bootRunDebugJvmFlags(gradleTask: string, gradleArgs: string[] = []): string[] {
+	if (!isBootRunLikeGradleTask(gradleTask)) {
+		return [];
+	}
+	if (gradleArgs.some(arg => arg === '--debug-jvm' || arg === '-debug-jvm')) {
+		return [];
+	}
+	return ['--debug-jvm'];
+}
+
+export function isBootRunLikeGradleTask(gradleTask: string): boolean {
+	return /(?:^|:)(?:bootRun|run)$/i.test(gradleTask.trim());
+}
+
 export function jdwpAgentLib(port: number = DEFAULT_DEBUG_PORT): string {
-	return `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=${port}`;
+	return `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:${port}`;
 }
 
 export function gradleJavaExecJdwpInitScript(port: number = DEFAULT_DEBUG_PORT): string {
 	const agent = jdwpAgentLib(port).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 	return `
+import org.gradle.api.tasks.JavaExec
+
 allprojects { project ->
-  project.afterEvaluate {
-    project.tasks.withType(JavaExec) { task ->
-      def hasJdwp = task.jvmArgs.any { it.toString().contains('jdwp') }
-      if (!hasJdwp) {
-        task.jvmArgs '${agent}'
-      }
+  project.tasks.withType(JavaExec).configureEach { JavaExec task ->
+    def taskName = task.name
+    if (taskName != 'bootRun' && taskName != 'run') {
+      return
+    }
+    def hasJdwp = task.jvmArgs.any { it.toString().contains('jdwp') }
+    if (!hasJdwp) {
+      task.jvmArgs task.jvmArgs + ['${agent}']
     }
   }
 }
@@ -270,8 +300,18 @@ export interface GradleDebugStatus {
 }
 
 export function isJdwpListening(output: string): boolean {
-	return /Listening for transport dt_socket at address:\s*\d+/i.test(output)
-		|| /Listening for transport dt_socket/i.test(output);
+	return /Listening for transport dt_socket/i.test(output);
+}
+
+/** True once Gradle has started bootRun/run (app JVM may not be up yet). */
+export function hasGradleAppTaskStarted(output: string): boolean {
+	const task = lastGradleTask(output);
+	return task !== undefined && isBootOrRunTask(task);
+}
+
+/** Total time to wait for Gradle compile + bootRun JVM + JDWP (first run can be slow). */
+export function gradleStartupTimeoutMs(configuredMs: number): number {
+	return Math.max(configuredMs, 600_000);
 }
 
 export function isAppRunning(output: string): boolean {

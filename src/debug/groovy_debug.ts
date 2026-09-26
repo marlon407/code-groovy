@@ -1,4 +1,5 @@
 import { ChildProcess, spawn } from 'child_process';
+import * as net from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { GroovyJavaDebugAdapter } from './groovy_debug_adapter';
@@ -11,10 +12,13 @@ import {
 	detectDebugProject,
 	DetectedDebugProject,
 	dynamicDebugConfigurations,
+	gradleStartupTimeoutMs,
 	GroovyDebugInput,
 	GradleDebugStatus,
+	hasGradleAppTaskStarted,
 	isJdwpListening,
 	JAVA_DEBUG_EXTENSION_ID,
+	parseDebugPort,
 	pickJavaProjectName,
 	readGradleDebugStatus,
 	toJavaAttachConfig
@@ -163,7 +167,8 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 		this.output.show(true);
 		this.setDebugStatus({ phase: 'starting', message: 'Starting Gradle…' });
 
-		const timeoutMs = vscode.workspace.getConfiguration('codeGroovy.debug').get<number>('attachTimeoutMs', 180_000);
+		const jdwpWaitMs = vscode.workspace.getConfiguration('codeGroovy').get<number>('debug.attachTimeoutMs', 180_000);
+		const debugPort = parseDebugPort(input.port);
 
 		return vscode.window.withProgress(
 			{
@@ -179,7 +184,8 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 					command.command,
 					command.args,
 					command.cwd,
-					timeoutMs,
+					jdwpWaitMs,
+					debugPort,
 					combined,
 					progress
 				);
@@ -191,17 +197,20 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 		command: string,
 		args: string[],
 		cwd: string,
-		timeoutMs: number,
+		jdwpWaitMs: number,
+		debugPort: number,
 		token: vscode.CancellationToken,
 		progress: vscode.Progress<{ message?: string }>
 	): Promise<boolean> {
 		return new Promise(resolve => {
 			let settled = false;
 			let buffer = '';
-			let timer: NodeJS.Timeout | undefined;
+			let pollTimer: NodeJS.Timeout | undefined;
+			let appTaskStarted = false;
 			let lastProgress = '';
 			let notifiedBuild = false;
 			let notifiedRunning = false;
+			const launchTimeoutMs = gradleStartupTimeoutMs(jdwpWaitMs);
 			const child = spawn(command, args, {
 				cwd,
 				env: process.env,
@@ -210,15 +219,20 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 			});
 			this.launched = child;
 
+			const clearTimers = () => {
+				clearTimeout(launchTimer);
+				if (pollTimer) {
+					clearInterval(pollTimer);
+				}
+			};
+
 			const finish = (ok: boolean, message?: string) => {
 				if (settled) {
 					return;
 				}
 				settled = true;
 				cancelListener.dispose();
-				if (timer) {
-					clearTimeout(timer);
-				}
+				clearTimers();
 				if (!ok) {
 					this.launchedSessionName = undefined;
 					this.stopLaunchedProcess();
@@ -238,14 +252,45 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 				return;
 			}
 
-			timer = setTimeout(() => {
-				finish(false, `Timed out waiting for JDWP after ${Math.round(timeoutMs / 1000)}s. Check the Code Groovy Debug output.`);
-			}, timeoutMs);
+			const launchTimer = setTimeout(() => {
+				finish(
+					false,
+					`Timed out waiting for JDWP on port ${debugPort} after ${Math.round(launchTimeoutMs / 1000)}s. Check the Code Groovy Debug output (bootRun can run a long time before the JVM opens the port). Increase codeGroovy.debug.attachTimeoutMs if needed.`
+				);
+			}, launchTimeoutMs);
+
+			pollTimer = setInterval(() => {
+				if (settled) {
+					return;
+				}
+				void isDebugPortOpen(debugPort).then(open => {
+					if (open) {
+						finish(true);
+					}
+				});
+			}, 400);
+
+			const noteAppTaskStarted = () => {
+				if (appTaskStarted || settled) {
+					return;
+				}
+				appTaskStarted = true;
+				progress.report({ message: 'bootRun started — waiting for JVM debug port…' });
+			};
+
+			const tryFinishOnJdwp = () => {
+				if (isJdwpListening(buffer)) {
+					finish(true);
+				}
+			};
 
 			const onChunk = (chunk: Buffer) => {
 				const text = chunk.toString('utf8');
 				buffer += text;
 				this.output.append(text);
+				if (hasGradleAppTaskStarted(buffer)) {
+					noteAppTaskStarted();
+				}
 				const status = readGradleDebugStatus(buffer);
 				this.setDebugStatus(status);
 				if (!settled && status.message !== lastProgress) {
@@ -260,9 +305,7 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 					notifiedRunning = true;
 					void vscode.window.showInformationMessage('Application is running.');
 				}
-				if (isJdwpListening(buffer)) {
-					finish(true);
-				}
+				tryFinishOnJdwp();
 			};
 
 			child.stdout?.on('data', onChunk);
@@ -377,7 +420,8 @@ async function waitForJavaDebugPort(): Promise<number> {
 
 	const commandNames = ['vscode.java.startDebugSession', 'java.startDebugSession'];
 	let lastError: Error | undefined;
-	for (let attempt = 0; attempt < 25; attempt++) {
+	const maxAttempts = 150;
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		const available = await vscode.commands.getCommands(true);
 		for (const name of commandNames) {
 			if (!available.includes(name)) {
@@ -423,6 +467,32 @@ async function listJdtProjectNames(): Promise<string[]> {
 	} catch {
 		return [];
 	}
+}
+
+async function isDebugPortOpen(port: number): Promise<boolean> {
+	for (const host of ['127.0.0.1', '::1']) {
+		if (await isDebugPortOpenOnHost(host, port)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isDebugPortOpenOnHost(host: string, port: number): Promise<boolean> {
+	return new Promise(resolve => {
+		const socket = net.connect({ host, port }, () => {
+			socket.destroy();
+			resolve(true);
+		});
+		socket.setTimeout(800, () => {
+			socket.destroy();
+			resolve(false);
+		});
+		socket.on('error', () => {
+			socket.destroy();
+			resolve(false);
+		});
+	});
 }
 
 function mergeCancellation(

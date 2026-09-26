@@ -11,7 +11,11 @@ import {
 	detectDebugProject,
 	dynamicDebugConfigurations,
 	findGradleWrapper,
+	bootRunDebugJvmFlags,
 	gradleJavaExecJdwpInitScript,
+	gradleStartupTimeoutMs,
+	hasGradleAppTaskStarted,
+	isBootRunLikeGradleTask,
 	isJdwpListening,
 	parseDebugPort,
 	pickJavaProjectName,
@@ -72,9 +76,11 @@ suite('groovy_debug_logic', () => {
 			assert.ok(command);
 			assert.strictEqual(command!.cwd, root);
 			assert.strictEqual(command!.args[0], ':web:bootRun');
-			assert.strictEqual(command!.args[1], '-I');
-			assert.ok(command!.args[2].endsWith('.gradle'));
-			assert.ok(fs.readFileSync(command!.args[2], 'utf8').includes('jdwp'));
+			assert.strictEqual(command!.args[1], '--console=plain');
+			assert.strictEqual(command!.args[2], '--debug-jvm');
+			assert.strictEqual(command!.args[3], '-I');
+			assert.ok(command!.args[4].endsWith('.gradle'));
+			assert.ok(fs.readFileSync(command!.args[4], 'utf8').includes('jdwp'));
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -90,8 +96,10 @@ suite('groovy_debug_logic', () => {
 				gradleArgs: ['-Dgrails.env=test']
 			});
 			assert.strictEqual(command?.args[0], ':api:bootRun');
-			assert.strictEqual(command?.args[1], '-I');
-			assert.deepStrictEqual(command?.args.slice(3), ['-Dgrails.env=test']);
+			assert.strictEqual(command?.args[1], '--console=plain');
+			assert.strictEqual(command?.args[2], '--debug-jvm');
+			assert.strictEqual(command?.args[3], '-I');
+			assert.deepStrictEqual(command?.args.slice(5), ['-Dgrails.env=test']);
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -109,7 +117,9 @@ suite('groovy_debug_logic', () => {
 			assert.strictEqual(defaultLaunchName(project.kind), 'Groovy: Launch Micronaut');
 			const command = buildGradleDebugCommand(project);
 			assert.strictEqual(command?.args[0], 'run');
-			assert.strictEqual(command?.args[1], '-I');
+			assert.strictEqual(command?.args[1], '--console=plain');
+			assert.strictEqual(command?.args[2], '--debug-jvm');
+			assert.strictEqual(command?.args[3], '-I');
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -136,13 +146,31 @@ suite('groovy_debug_logic', () => {
 
 	test('recognises JDWP listening output', () => {
 		assert.ok(isJdwpListening('Listening for transport dt_socket at address: 5005\n'));
+		assert.ok(isJdwpListening('Listening for transport dt_socket at address: localhost:5005\n'));
 		assert.ok(!isJdwpListening('Starting Gradle Daemon...\n'));
+	});
+
+	test('detects bootRun/run task start in Gradle output', () => {
+		assert.ok(hasGradleAppTaskStarted('> Task :web:bootRun\n'));
+		assert.ok(hasGradleAppTaskStarted('> Task :app:bootRun\n'));
+		assert.ok(!hasGradleAppTaskStarted('> Task :web:compileGroovy\n'));
+	});
+
+	test('waits at least ten minutes for first launch JDWP', () => {
+		assert.strictEqual(gradleStartupTimeoutMs(180_000), 600_000);
+		assert.strictEqual(gradleStartupTimeoutMs(900_000), 900_000);
+	});
+
+	test('adds Spring Boot --debug-jvm for bootRun tasks', () => {
+		assert.ok(isBootRunLikeGradleTask(':web:bootRun'));
+		assert.deepStrictEqual(bootRunDebugJvmFlags(':web:bootRun', []), ['--debug-jvm']);
+		assert.deepStrictEqual(bootRunDebugJvmFlags(':web:compileGroovy', []), []);
 	});
 
 	test('writes a Gradle init script that enables JDWP on JavaExec', () => {
 		const script = gradleJavaExecJdwpInitScript(5005);
-		assert.ok(script.includes("tasks.withType(JavaExec)"));
-		assert.ok(script.includes('address=5005'));
+		assert.ok(script.includes('tasks.withType(JavaExec)'));
+		assert.ok(script.includes('address=*:5005'));
 		assert.ok(script.includes('suspend=y'));
 	});
 
@@ -194,7 +222,7 @@ suite('groovy_debug_logic', () => {
 			assert.ok(project.sourcePaths.some(item => item.includes(path.join('domain', 'grails-app'))));
 			const command = buildGradleDebugCommand(project);
 			assert.strictEqual(command?.args[0], ':web:bootRun');
-			assert.strictEqual(command?.args[1], '-I');
+			assert.strictEqual(command?.args[2], '--debug-jvm');
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
