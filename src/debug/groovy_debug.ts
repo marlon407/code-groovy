@@ -229,7 +229,8 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 				cwd,
 				env: process.env,
 				shell: process.platform === 'win32',
-				detached: process.platform !== 'win32'
+				// Keep attached to the Gradle client so bootRun stdout/stderr (and JDWP lines) stay visible.
+				detached: false
 			});
 			this.launched = child;
 
@@ -328,16 +329,33 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 				finish(false, `Failed to start Gradle: ${err.message}`);
 			});
 			child.on('close', code => {
-				if (!settled) {
-					const summary = summarizeGradleFailure(buffer);
-					finish(
-						false,
-						summary
-							?? `Gradle exited before the app opened a debug port (code ${code}). Check the Code Groovy Debug output. Port ${debugPort} may already be in use.`
-					);
+				if (settled) {
+					return;
 				}
+				void this.handleGradleProcessExit(code, debugPort, buffer, finish);
 			});
 		});
+	}
+
+	private async handleGradleProcessExit(
+		code: number | null,
+		debugPort: number,
+		buffer: string,
+		finish: (ok: boolean, message?: string) => void
+	): Promise<void> {
+		for (let attempt = 0; attempt < 20; attempt++) {
+			if (await isDebugPortOpen(debugPort)) {
+				finish(true);
+				return;
+			}
+			await sleep(250);
+		}
+		const summary = summarizeGradleFailure(buffer);
+		finish(
+			false,
+			summary
+				?? `Gradle exited before the app opened a debug port (code ${code}). Check the Code Groovy Debug output. Port ${debugPort} may already be in use.`
+		);
 	}
 
 	private setDebugStatus(status: GradleDebugStatus): void {
@@ -368,11 +386,7 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 			spawn('taskkill', ['/pid', String(child.pid), '/T', '/F']);
 			return;
 		}
-		try {
-			process.kill(-child.pid, 'SIGTERM');
-		} catch {
-			child.kill('SIGTERM');
-		}
+		child.kill('SIGTERM');
 	}
 }
 

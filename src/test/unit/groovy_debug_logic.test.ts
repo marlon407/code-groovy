@@ -167,7 +167,8 @@ suite('groovy_debug_logic', () => {
 
 	test('writes a Gradle init script that enables JDWP on JavaExec', () => {
 		const script = gradleJavaExecJdwpInitScript(5005);
-		assert.ok(script.includes('tasks.withType(org.gradle.api.tasks.JavaExec)'));
+		assert.ok(script.includes('taskGraph.whenReady'));
+		assert.ok(script.includes('task.doFirst'));
 		assert.ok(script.includes('address=*:5005'));
 		assert.ok(script.includes('suspend=y'));
 	});

@@ -220,27 +220,24 @@ export function gradleJavaExecJdwpInitScript(port: number = DEFAULT_DEBUG_PORT):
 	return `
 def codeGroovyJdwpAgent = '${agent}'
 
-def codeGroovyApplyJdwp = { org.gradle.api.tasks.JavaExec task ->
+def codeGroovyInjectJdwpDoFirst = { task ->
   if (task.name != 'bootRun' && task.name != 'run') {
     return
   }
-  def existing = task.jvmArgs ?: []
-  if (existing.any { it.toString().contains('jdwp') }) {
-    return
+  task.doFirst {
+    def existing = task.jvmArgs ?: []
+    if (existing.any { it.toString().contains('jdwp') }) {
+      return
+    }
+    task.jvmArgs(existing + [codeGroovyJdwpAgent])
   }
-  task.jvmArgs(existing + [codeGroovyJdwpAgent])
 }
 
 allprojects { project ->
-  project.afterEvaluate {
-    project.tasks.withType(org.gradle.api.tasks.JavaExec).configureEach { task ->
-      codeGroovyApplyJdwp(task)
-    }
-  }
   project.gradle.taskGraph.whenReady { graph ->
     graph.allTasks.each { task ->
       if (task instanceof org.gradle.api.tasks.JavaExec) {
-        codeGroovyApplyJdwp(task)
+        codeGroovyInjectJdwpDoFirst(task)
       }
     }
   }
