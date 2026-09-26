@@ -18,6 +18,8 @@ export interface GroovyDebugInput {
 	sourcePaths?: string[];
 	gradleArgs?: string[];
 	projectName?: string;
+	/** Pass `--debug-jvm` to bootRun (Spring Boot plugin only; breaks some Grails builds). */
+	useBootRunDebugJvm?: boolean;
 }
 
 export interface DetectedDebugProject {
@@ -178,7 +180,7 @@ export function buildGradleDebugCommand(
 	const consolePlain = gradleArgs.some(arg => arg === '--console=plain' || arg.startsWith('--console='))
 		? []
 		: ['--console=plain'];
-	const bootDebug = bootRunDebugJvmFlags(gradleTask, gradleArgs);
+	const bootDebug = bootRunDebugJvmFlags(gradleTask, gradleArgs, input.useBootRunDebugJvm);
 
 	return {
 		command: project.gradlew,
@@ -187,9 +189,16 @@ export function buildGradleDebugCommand(
 	};
 }
 
-/** Spring Boot / Grails bootRun: `--debug-jvm` enables JDWP on the app process (not the Gradle daemon). */
-export function bootRunDebugJvmFlags(gradleTask: string, gradleArgs: string[] = []): string[] {
-	if (!isBootRunLikeGradleTask(gradleTask)) {
+/**
+ * Spring Boot 2.2+ bootRun accepts `--debug-jvm`; many Grails/Gradle setups reject it (Gradle exit 1).
+ * Off by default — JDWP comes from the init script on JavaExec bootRun/run.
+ */
+export function bootRunDebugJvmFlags(
+	gradleTask: string,
+	gradleArgs: string[] = [],
+	enabled = false
+): string[] {
+	if (!enabled || !isBootRunLikeGradleTask(gradleTask)) {
 		return [];
 	}
 	if (gradleArgs.some(arg => arg === '--debug-jvm' || arg === '-debug-jvm')) {
@@ -209,21 +218,48 @@ export function jdwpAgentLib(port: number = DEFAULT_DEBUG_PORT): string {
 export function gradleJavaExecJdwpInitScript(port: number = DEFAULT_DEBUG_PORT): string {
 	const agent = jdwpAgentLib(port).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 	return `
-import org.gradle.api.tasks.JavaExec
+def codeGroovyJdwpAgent = '${agent}'
+
+def codeGroovyApplyJdwp = { org.gradle.api.tasks.JavaExec task ->
+  if (task.name != 'bootRun' && task.name != 'run') {
+    return
+  }
+  def existing = task.jvmArgs ?: []
+  if (existing.any { it.toString().contains('jdwp') }) {
+    return
+  }
+  task.jvmArgs(existing + [codeGroovyJdwpAgent])
+}
 
 allprojects { project ->
-  project.tasks.withType(JavaExec).configureEach { JavaExec task ->
-    def taskName = task.name
-    if (taskName != 'bootRun' && taskName != 'run') {
-      return
+  project.afterEvaluate {
+    project.tasks.withType(org.gradle.api.tasks.JavaExec).configureEach { task ->
+      codeGroovyApplyJdwp(task)
     }
-    def hasJdwp = task.jvmArgs.any { it.toString().contains('jdwp') }
-    if (!hasJdwp) {
-      task.jvmArgs task.jvmArgs + ['${agent}']
+  }
+  project.gradle.taskGraph.whenReady { graph ->
+    graph.allTasks.each { task ->
+      if (task instanceof org.gradle.api.tasks.JavaExec) {
+        codeGroovyApplyJdwp(task)
+      }
     }
   }
 }
 `.trim() + '\n';
+}
+
+export function summarizeGradleFailure(output: string): string | undefined {
+	if (/Unknown command-line option '--debug-jvm'/i.test(output)) {
+		return 'Gradle rejected --debug-jvm for this project. Leave codeGroovy.debug.useBootRunDebugJvm disabled (default).';
+	}
+	const what = /\* What went wrong:\s*\n(?:(?:\* )?([^\n]+(?:\n(?!\* ).+)*))/i.exec(output);
+	if (what?.[1]) {
+		return what[1].trim().split('\n').slice(0, 4).join(' ').slice(0, 400);
+	}
+	if (/BUILD FAILED/i.test(output) || /FAILURE: Build failed/i.test(output)) {
+		return 'Gradle build failed — see Code Groovy Debug output for details.';
+	}
+	return undefined;
 }
 
 export function toJavaAttachConfig(

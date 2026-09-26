@@ -21,6 +21,7 @@ import {
 	parseDebugPort,
 	pickJavaProjectName,
 	readGradleDebugStatus,
+	summarizeGradleFailure,
 	toJavaAttachConfig
 } from './groovy_debug_logic';
 
@@ -151,12 +152,28 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 		input: GroovyDebugInput,
 		token?: vscode.CancellationToken
 	): Promise<boolean> {
+		const debugConfig = vscode.workspace.getConfiguration('codeGroovy');
+		const jdwpWaitMs = debugConfig.get<number>('debug.attachTimeoutMs', 180_000);
+		const debugPort = parseDebugPort(input.port);
+		input.useBootRunDebugJvm = debugConfig.get<boolean>('debug.useBootRunDebugJvm', false);
+
 		const command = buildGradleDebugCommand(project, input);
 		if (!command) {
 			void vscode.window.showErrorMessage(
 				'No Gradle wrapper found. Start the app with JDWP and use Groovy: Attach, or open a Gradle project.'
 			);
 			return false;
+		}
+
+		if (await isDebugPortOpen(debugPort)) {
+			const choice = await vscode.window.showWarningMessage(
+				`Port ${debugPort} is already in use (often a previous bootRun). Stop that JVM or pick another port in launch.json.`,
+				'Continue anyway',
+				'Cancel'
+			);
+			if (choice !== 'Continue anyway') {
+				return false;
+			}
 		}
 
 		this.stopLaunchedProcess();
@@ -166,9 +183,6 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 		this.output.appendLine(`cwd: ${command.cwd}`);
 		this.output.show(true);
 		this.setDebugStatus({ phase: 'starting', message: 'Starting Gradle…' });
-
-		const jdwpWaitMs = vscode.workspace.getConfiguration('codeGroovy').get<number>('debug.attachTimeoutMs', 180_000);
-		const debugPort = parseDebugPort(input.port);
 
 		return vscode.window.withProgress(
 			{
@@ -315,9 +329,11 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 			});
 			child.on('close', code => {
 				if (!settled) {
+					const summary = summarizeGradleFailure(buffer);
 					finish(
 						false,
-						`Gradle exited before the app opened a debug port (code ${code}). Check the Code Groovy Debug output. Port 5005 may already be in use.`
+						summary
+							?? `Gradle exited before the app opened a debug port (code ${code}). Check the Code Groovy Debug output. Port ${debugPort} may already be in use.`
 					);
 				}
 			});

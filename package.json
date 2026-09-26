@@ -97,6 +97,11 @@
                     "type": "number",
                     "default": 180000,
                     "markdownDescription": "Minimum time to wait for Gradle (compile + bootRun) and the app JVM to open JDWP (default port 5005). The extension waits at least 10 minutes on first launch; raise this if large projects need longer."
+                },
+                "codeGroovy.debug.useBootRunDebugJvm": {
+                    "type": "boolean",
+                    "default": false,
+                    "markdownDescription": "Pass `--debug-jvm` to `bootRun` (Spring Boot Gradle plugin). Leave **off** for most Grails projects — Gradle often exits with code 1; JDWP is injected via the init script instead."
                 }
             }
         },

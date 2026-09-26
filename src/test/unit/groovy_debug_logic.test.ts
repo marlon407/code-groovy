@@ -77,10 +77,9 @@ suite('groovy_debug_logic', () => {
 			assert.strictEqual(command!.cwd, root);
 			assert.strictEqual(command!.args[0], ':web:bootRun');
 			assert.strictEqual(command!.args[1], '--console=plain');
-			assert.strictEqual(command!.args[2], '--debug-jvm');
-			assert.strictEqual(command!.args[3], '-I');
-			assert.ok(command!.args[4].endsWith('.gradle'));
-			assert.ok(fs.readFileSync(command!.args[4], 'utf8').includes('jdwp'));
+			assert.strictEqual(command!.args[2], '-I');
+			assert.ok(command!.args[3].endsWith('.gradle'));
+			assert.ok(fs.readFileSync(command!.args[3], 'utf8').includes('jdwp'));
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -97,9 +96,8 @@ suite('groovy_debug_logic', () => {
 			});
 			assert.strictEqual(command?.args[0], ':api:bootRun');
 			assert.strictEqual(command?.args[1], '--console=plain');
-			assert.strictEqual(command?.args[2], '--debug-jvm');
-			assert.strictEqual(command?.args[3], '-I');
-			assert.deepStrictEqual(command?.args.slice(5), ['-Dgrails.env=test']);
+			assert.strictEqual(command?.args[2], '-I');
+			assert.deepStrictEqual(command?.args.slice(4), ['-Dgrails.env=test']);
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -118,8 +116,7 @@ suite('groovy_debug_logic', () => {
 			const command = buildGradleDebugCommand(project);
 			assert.strictEqual(command?.args[0], 'run');
 			assert.strictEqual(command?.args[1], '--console=plain');
-			assert.strictEqual(command?.args[2], '--debug-jvm');
-			assert.strictEqual(command?.args[3], '-I');
+			assert.strictEqual(command?.args[2], '-I');
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -161,15 +158,16 @@ suite('groovy_debug_logic', () => {
 		assert.strictEqual(gradleStartupTimeoutMs(900_000), 900_000);
 	});
 
-	test('adds Spring Boot --debug-jvm for bootRun tasks', () => {
+	test('adds --debug-jvm only when explicitly enabled', () => {
 		assert.ok(isBootRunLikeGradleTask(':web:bootRun'));
-		assert.deepStrictEqual(bootRunDebugJvmFlags(':web:bootRun', []), ['--debug-jvm']);
-		assert.deepStrictEqual(bootRunDebugJvmFlags(':web:compileGroovy', []), []);
+		assert.deepStrictEqual(bootRunDebugJvmFlags(':web:bootRun', [], false), []);
+		assert.deepStrictEqual(bootRunDebugJvmFlags(':web:bootRun', [], true), ['--debug-jvm']);
+		assert.deepStrictEqual(bootRunDebugJvmFlags(':web:compileGroovy', [], true), []);
 	});
 
 	test('writes a Gradle init script that enables JDWP on JavaExec', () => {
 		const script = gradleJavaExecJdwpInitScript(5005);
-		assert.ok(script.includes('tasks.withType(JavaExec)'));
+		assert.ok(script.includes('tasks.withType(org.gradle.api.tasks.JavaExec)'));
 		assert.ok(script.includes('address=*:5005'));
 		assert.ok(script.includes('suspend=y'));
 	});
@@ -222,7 +220,7 @@ suite('groovy_debug_logic', () => {
 			assert.ok(project.sourcePaths.some(item => item.includes(path.join('domain', 'grails-app'))));
 			const command = buildGradleDebugCommand(project);
 			assert.strictEqual(command?.args[0], ':web:bootRun');
-			assert.strictEqual(command?.args[2], '--debug-jvm');
+			assert.strictEqual(command?.args[2], '-I');
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
