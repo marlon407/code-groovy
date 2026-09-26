@@ -3,6 +3,9 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+- Add `codeGroovy.importOrder.warnings` to disable import-order **Problems** warnings without hiding other diagnostics ([#54](https://github.com/marlon407/code-groovy/issues/54))
+
 ## [0.2.1] - 2026-09-04
 - Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)
 - Ctrl+click another TagLib from Groovy (`catalogTagLib.method` / `namespace.method`) and `g.render(template: "...")` the same way as in GSP
