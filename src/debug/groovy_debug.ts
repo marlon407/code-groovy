@@ -274,16 +274,21 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 				);
 			}, launchTimeoutMs);
 
-			pollTimer = setInterval(() => {
-				if (settled) {
+			const startPortPoll = () => {
+				if (pollTimer) {
 					return;
 				}
-				void isDebugPortOpen(debugPort).then(open => {
-					if (open) {
-						finish(true);
+				pollTimer = setInterval(() => {
+					if (settled) {
+						return;
 					}
-				});
-			}, 400);
+					void isDebugPortOpen(debugPort).then(open => {
+						if (open) {
+							finish(true);
+						}
+					});
+				}, 400);
+			};
 
 			const noteAppTaskStarted = () => {
 				if (appTaskStarted || settled) {
@@ -291,6 +296,7 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 				}
 				appTaskStarted = true;
 				progress.report({ message: 'bootRun started — waiting for JVM debug port…' });
+				startPortPoll();
 			};
 
 			const tryFinishOnJdwp = () => {
