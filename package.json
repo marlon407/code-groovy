@@ -102,6 +102,16 @@
                     "type": "boolean",
                     "default": false,
                     "markdownDescription": "Pass `--debug-jvm` to `bootRun` (Spring Boot Gradle plugin). Leave **off** for most Grails projects — Gradle often exits with code 1; JDWP is injected via the init script instead."
+                },
+                "codeGroovy.debug.openBrowserOnReady": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "When Grails/Spring Boot finishes starting (log line + HTTP responds), open the app URL in the default browser."
+                },
+                "codeGroovy.debug.serverUrl": {
+                    "type": "string",
+                    "default": "",
+                    "markdownDescription": "Optional app URL for readiness checks (e.g. `http://localhost:8083`). Leave empty to parse from Gradle output (`Grails application running at …`)."
                 }
             }
         },
@@ -257,7 +267,15 @@
 							"projectName": {
 								"type": "string",
 								"description": "Java project name used by Debugger for Java to evaluate expressions (defaults to the Gradle module, e.g. web)."
-							}
+							},
+                            "serverUrl": {
+                                "type": "string",
+                                "description": "App URL to probe and open when startup completes (overrides codeGroovy.debug.serverUrl)."
+                            },
+                            "openBrowserOnReady": {
+                                "type": "boolean",
+                                "description": "Open the browser when the app responds on serverUrl (default from codeGroovy.debug.openBrowserOnReady)."
+                            }
                         }
                     },
                     "attach": {

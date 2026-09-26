@@ -20,6 +20,9 @@ export interface GroovyDebugInput {
 	projectName?: string;
 	/** Pass `--debug-jvm` to bootRun (Spring Boot plugin only; breaks some Grails builds). */
 	useBootRunDebugJvm?: boolean;
+	/** Override app URL for readiness probe / browser (e.g. http://localhost:8083). */
+	serverUrl?: string;
+	openBrowserOnReady?: boolean;
 }
 
 export interface DetectedDebugProject {
@@ -356,12 +359,53 @@ export function isAppRunning(output: string): boolean {
 		|| /Startup completed in/i.test(output);
 }
 
+/** Best URL to open when the app is ready (Grails / Spring Boot log lines). */
+export function extractAppReadyUrl(output: string): string | undefined {
+	const grails = /Grails application running at (https?:\/\/[^\s]+)/i.exec(output);
+	if (grails?.[1]) {
+		return normalizeBrowserUrl(grails[1]);
+	}
+	const spring = /Started \S+ in \d+(?:\.\d+)? seconds/i.test(output)
+		? /Tomcat started on port\(s\): (\d+)/i.exec(output)
+		: null;
+	if (spring?.[1]) {
+		return `http://localhost:${spring[1]}`;
+	}
+	const netty = /Netty started on port(?:\(s\))?: (\d+)/i.exec(output);
+	if (netty?.[1]) {
+		return `http://localhost:${netty[1]}`;
+	}
+	return undefined;
+}
+
+export function normalizeBrowserUrl(raw: string): string {
+	const trimmed = raw.trim().replace(/[)\]},.;]+$/, '');
+	try {
+		const parsed = new URL(trimmed);
+		return parsed.toString().replace(/\/$/, '') || trimmed;
+	} catch {
+		return trimmed;
+	}
+}
+
+export function resolveAppServerUrl(output: string, configured?: string): string | undefined {
+	const fromConfig = configured?.trim();
+	if (fromConfig) {
+		return normalizeBrowserUrl(fromConfig);
+	}
+	return extractAppReadyUrl(output);
+}
+
 export function readGradleDebugStatus(output: string): GradleDebugStatus {
 	if (/BUILD FAILED/i.test(output) || /FAILURE: Build failed/i.test(output)) {
 		return { phase: 'failed', message: 'Gradle build failed' };
 	}
 	if (isAppRunning(output)) {
-		return { phase: 'running', message: 'Application is running' };
+		const url = extractAppReadyUrl(output);
+		return {
+			phase: 'running',
+			message: url ? `Application ready at ${url}` : 'Application is running'
+		};
 	}
 	if (isJdwpListening(output)) {
 		return { phase: 'jdwp', message: 'Debug port open, attaching…' };

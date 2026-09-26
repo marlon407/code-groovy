@@ -10,6 +10,8 @@ import {
 	defaultRequest,
 	detectDebugProject,
 	dynamicDebugConfigurations,
+	extractAppReadyUrl,
+	resolveAppServerUrl,
 	findGradleWrapper,
 	bootRunDebugJvmFlags,
 	gradleJavaExecJdwpInitScript,
@@ -171,6 +173,12 @@ suite('groovy_debug_logic', () => {
 		assert.ok(script.includes('task.doFirst'));
 		assert.ok(script.includes('address=127.0.0.1:5005'));
 		assert.ok(script.includes('suspend=y'));
+	});
+
+	test('extracts Grails app URL from bootRun output', () => {
+		const log = 'Grails application running at http://localhost:8080/myapp in environment: development';
+		assert.strictEqual(extractAppReadyUrl(log), 'http://localhost:8080/myapp');
+		assert.strictEqual(resolveAppServerUrl(log, 'http://localhost:9999'), 'http://localhost:9999');
 	});
 
 	test('reads Gradle debug phases from bootRun output', () => {

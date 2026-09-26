@@ -1,4 +1,6 @@
 import { ChildProcess, spawn } from 'child_process';
+import * as http from 'http';
+import * as https from 'https';
 import * as net from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -21,6 +23,7 @@ import {
 	parseDebugPort,
 	pickJavaProjectName,
 	readGradleDebugStatus,
+	resolveAppServerUrl,
 	summarizeGradleFailure,
 	toJavaAttachConfig
 } from './groovy_debug_logic';
@@ -51,6 +54,8 @@ export function registerGroovyDebug(context: vscode.ExtensionContext): void {
 class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode.Disposable {
 	private launched: ChildProcess | undefined;
 	private launchedSessionName: string | undefined;
+	private appReadyHandled = false;
+	private appReadyOptions: { openBrowser: boolean; serverUrl?: string } = { openBrowser: true };
 	private readonly output = vscode.window.createOutputChannel('Code Groovy Debug');
 	private readonly status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 	private readonly disposables: vscode.Disposable[] = [
@@ -156,6 +161,11 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 		const jdwpWaitMs = debugConfig.get<number>('debug.attachTimeoutMs', 180_000);
 		const debugPort = parseDebugPort(input.port);
 		input.useBootRunDebugJvm = debugConfig.get<boolean>('debug.useBootRunDebugJvm', false);
+		this.appReadyHandled = false;
+		this.appReadyOptions = {
+			openBrowser: input.openBrowserOnReady ?? debugConfig.get<boolean>('debug.openBrowserOnReady', true),
+			serverUrl: (input.serverUrl || debugConfig.get<string>('debug.serverUrl', '')).trim() || undefined
+		};
 
 		const command = buildGradleDebugCommand(project, input);
 		if (!command) {
@@ -201,7 +211,8 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 					jdwpWaitMs,
 					debugPort,
 					combined,
-					progress
+					progress,
+					this.appReadyOptions.serverUrl
 				);
 			}
 		);
@@ -214,7 +225,8 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 		jdwpWaitMs: number,
 		debugPort: number,
 		token: vscode.CancellationToken,
-		progress: vscode.Progress<{ message?: string }>
+		progress: vscode.Progress<{ message?: string }>,
+		configuredServerUrl?: string
 	): Promise<boolean> {
 		return new Promise(resolve => {
 			let settled = false;
@@ -255,6 +267,8 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 					if (message) {
 						void vscode.window.showErrorMessage(message);
 					}
+				} else if (configuredServerUrl) {
+					void this.handleApplicationReady(buffer, configuredServerUrl, progress);
 				}
 				resolve(ok);
 			};
@@ -324,7 +338,7 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 				}
 				if (!notifiedRunning && status.phase === 'running') {
 					notifiedRunning = true;
-					void vscode.window.showInformationMessage('Application is running.');
+					void this.handleApplicationReady(buffer, configuredServerUrl, progress);
 				}
 				tryFinishOnJdwp();
 			};
@@ -340,6 +354,46 @@ class GroovyDebugController implements vscode.DebugConfigurationProvider, vscode
 				}
 				void this.handleGradleProcessExit(code, debugPort, buffer, finish);
 			});
+		});
+	}
+
+	private async handleApplicationReady(
+		buffer: string,
+		configuredServerUrl: string | undefined,
+		progress: vscode.Progress<{ message?: string }>
+	): Promise<void> {
+		if (this.appReadyHandled) {
+			return;
+		}
+		const url = resolveAppServerUrl(buffer, configuredServerUrl);
+		if (!url) {
+			void vscode.window.showInformationMessage(
+				'Application startup line detected. Set codeGroovy.debug.serverUrl or serverUrl in launch.json to probe HTTP and open the browser.'
+			);
+			return;
+		}
+
+		progress.report({ message: `Waiting for ${url} to respond…` });
+		this.setDebugStatus({ phase: 'running', message: `Waiting for ${url}…` });
+
+		const ready = await waitForHttpReady(url, 300_000);
+		if (!ready) {
+			void vscode.window.showWarningMessage(
+				`App log says it started but ${url} did not respond within 5 minutes.`
+			);
+			return;
+		}
+
+		this.appReadyHandled = true;
+		this.setDebugStatus({ phase: 'running', message: `Ready · ${url}` });
+		const openLabel = 'Open in browser';
+		if (this.appReadyOptions.openBrowser) {
+			await vscode.env.openExternal(vscode.Uri.parse(url));
+		}
+		void vscode.window.showInformationMessage(`Application ready at ${url}`, openLabel).then(choice => {
+			if (choice === openLabel) {
+				void vscode.env.openExternal(vscode.Uri.parse(url));
+			}
 		});
 	}
 
@@ -483,6 +537,49 @@ async function waitForJavaDebugPort(): Promise<number> {
 
 function sleep(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForHttpReady(url: string, timeoutMs: number): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (await probeHttpOnce(url)) {
+			return true;
+		}
+		await sleep(750);
+	}
+	return false;
+}
+
+function probeHttpOnce(url: string): Promise<boolean> {
+	return new Promise(resolve => {
+		let parsed: URL;
+		try {
+			parsed = new URL(url);
+		} catch {
+			resolve(false);
+			return;
+		}
+		const lib = parsed.protocol === 'https:' ? https : http;
+		const req = lib.request(
+			{
+				hostname: parsed.hostname,
+				port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+				path: `${parsed.pathname || '/'}${parsed.search}`,
+				method: 'GET',
+				timeout: 4000
+			},
+			res => {
+				res.resume();
+				resolve(res.statusCode !== undefined && res.statusCode > 0 && res.statusCode < 500);
+			}
+		);
+		req.on('timeout', () => {
+			req.destroy();
+			resolve(false);
+		});
+		req.on('error', () => resolve(false));
+		req.end();
+	});
 }
 
 async function listJdtProjectNames(): Promise<string[]> {
