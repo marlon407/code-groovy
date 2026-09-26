@@ -2,7 +2,7 @@
     "name": "code-groovy",
     "displayName": "Code Groovy",
     "description": "Groovy and GSP support for VS Code and Cursor",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "publisher": "marlon407",
     "license": "MIT",
     "engines": {
@@ -112,6 +112,11 @@
                     "type": "string",
                     "default": "",
                     "markdownDescription": "Optional app URL for readiness checks (e.g. `http://localhost:8080`). Leave empty to parse from Gradle output (`Grails application running at …`)."
+                },
+                "codeGroovy.importOrder.warnings": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show **Problems** warnings when Groovy `import` lines are not in the same order as **Organize imports** would use. Set to `false` to hide import-order warnings only (other diagnostics are unchanged)."
                 }
             }
         },

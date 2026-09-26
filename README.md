@@ -68,6 +68,7 @@ Keybindings are active only while a `.groovy` or `.gsp` editor has focus.
 | `codeGroovy.debug.attachTimeoutMs` | `180000` | How long to wait for the app JVM to open a JDWP port before giving up. |
 | `codeGroovy.index.maxSourceFiles` | `0` | Maximum workspace `.groovy` / `.java` files to index when Grails module detection is **not** in use. `0` means no limit. |
 | `codeGroovy.modules` | `["domain", "web", "api"]` | Gradle submodules to index when a `settings.gradle` is found. |
+| `codeGroovy.importOrder.warnings` | `true` | Warn in **Problems** when imports are out of order (same order as **Organize imports**). Set `false` to turn off those warnings only. |
 
 ## Debug
 

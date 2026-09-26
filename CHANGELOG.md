@@ -4,17 +4,21 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
-- Add Groovy/Grails debug: launch Gradle with `--debug-jvm` or attach to JDWP (port 5005) via Debugger for Java
+- Add Groovy/Grails debug: launch Gradle with JDWP on the app JVM or attach to JDWP (port 5005) via Debugger for Java
 - Show Groovy debug hover/inline values and inject Grails implicits (`params`, `session`, `request`, `flash`) into the Variables view
 - Compare import order in ASCII (same as Organize Imports), so a util class before a `converter` subpackage is not flagged
 - Resolve debug hover/Locals from the JDI variable tree (`this`/`delegate`) instead of Java `evaluate`, which fails in Groovy frames
 - Wait for Language Support for Java before starting the Groovy debug adapter, so Play no longer fails with "Couldn't find a debug adapter descriptor"
-- Show debug values on hover instead of method Groovydoc; pass Java `projectName` and evaluate `params` via `GrailsWebRequest.lookup()`
+- Show debug values on hover instead of method Groovydoc; pass Java `projectName` and evaluate Grails web request lookups
 - Show Gradle compile / build / app-running status in the debug progress notification and status bar
 - Do not list duplicate Groovy launch configs when `launch.json` already has them
 - Start workspace indexing when the window opens, without waiting for a `.groovy` file
 - Enable JDWP on the app `JavaExec` via a Gradle init script instead of CLI `--debug-jvm`, which debugs Gradle itself
 - Declare Language Support for Java and Debugger for Java as extension dependencies in `package.json`
+- Open the browser when the app HTTP endpoint responds after bootRun
+
+## [0.2.2] - 2026-09-26
+- Add `codeGroovy.importOrder.warnings` to disable import-order **Problems** warnings without hiding other diagnostics ([#54](https://github.com/marlon407/code-groovy/issues/54))
 
 ## [0.2.1] - 2026-09-04
 - Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)
