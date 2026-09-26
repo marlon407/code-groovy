@@ -20,10 +20,15 @@
     ],
     "icon": "groovy.png",
     "activationEvents": [
+        "onStartupFinished",
         "onCommand:cgroovy.organizeImports",
         "onCommand:cgroovy.organizeDependences",
+        "onCommand:cgroovy.debugApp",
         "onLanguage:groovy",
-        "onLanguage:gsp"
+        "onLanguage:gsp",
+        "onDebugResolve:groovy",
+        "onDebugDynamicConfigurations:groovy",
+        "onDebug"
     ],
     "repository": {
         "type": "git",
@@ -31,7 +36,9 @@
     },
     "main": "./out/extension",
     "extensionDependencies": [
-        "vscode.html-language-features"
+        "vscode.html-language-features",
+        "redhat.java",
+        "vscjava.vscode-java-debug"
     ],
     "contributes": {
         "htmlLanguageParticipants": [
@@ -85,6 +92,11 @@
                         "api"
                     ],
                     "markdownDescription": "Gradle submodules to index when settings.gradle is found."
+                },
+                "codeGroovy.debug.attachTimeoutMs": {
+                    "type": "number",
+                    "default": 180000,
+                    "markdownDescription": "How long to wait for the Gradle JVM to open a JDWP debug port (`Listening for transport dt_socket`) before giving up."
                 }
             }
         },
@@ -104,6 +116,10 @@
             {
                 "command": "cgroovy.rebuildIndex",
                 "title": "Rebuild Code Groovy Index"
+            },
+            {
+                "command": "cgroovy.debugApp",
+                "title": "Debug Groovy / Grails Application"
             }
         ],
         "keybindings": [
@@ -180,6 +196,134 @@
                 "path": "./syntaxes/gsp.grails-mid-tag.injection.tmLanguage.json",
                 "injectTo": [
                     "text.html.gsp"
+                ]
+            }
+        ],
+        "breakpoints": [
+            {
+                "language": "groovy"
+            }
+        ],
+        "debuggers": [
+            {
+                "type": "groovy",
+                "label": "Groovy / Grails",
+                "languages": [
+                    "groovy"
+                ],
+                "configurationAttributes": {
+                    "launch": {
+                        "properties": {
+                            "port": {
+                                "type": [
+                                    "number",
+                                    "string"
+                                ],
+                                "default": 5005,
+                                "description": "JDWP port of the app JVM (default 5005)."
+                            },
+                            "hostName": {
+                                "type": "string",
+                                "default": "localhost",
+                                "description": "Host to attach after the debug JVM starts."
+                            },
+                            "task": {
+                                "type": "string",
+                                "description": "Gradle task to run (default bootRun for Grails, run otherwise). Can be qualified, e.g. :web:bootRun."
+                            },
+                            "module": {
+                                "type": "string",
+                                "description": "Gradle submodule to run (default web in a Grails multi-module repo)."
+                            },
+                            "gradleArgs": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "Extra arguments passed to Gradle after the task name."
+                            },
+							"sourcePaths": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"description": "Extra source directories for Groovy/Java mapping. Auto-detected when omitted."
+							},
+							"projectName": {
+								"type": "string",
+								"description": "Java project name used by Debugger for Java to evaluate expressions (defaults to the Gradle module, e.g. web)."
+							}
+                        }
+                    },
+                    "attach": {
+                        "required": [
+                            "port"
+                        ],
+                        "properties": {
+                            "hostName": {
+                                "type": "string",
+                                "default": "localhost",
+                                "description": "Host name or IP of the debuggee JVM."
+                            },
+                            "port": {
+                                "type": [
+                                    "number",
+                                    "string"
+                                ],
+                                "default": 5005,
+                                "description": "JDWP port of the debuggee JVM."
+                            },
+							"sourcePaths": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"description": "Extra source directories for Groovy/Java mapping. Auto-detected when omitted."
+							},
+							"projectName": {
+								"type": "string",
+								"description": "Java project name used by Debugger for Java to evaluate expressions (defaults to the Gradle module, e.g. web)."
+							}
+                        }
+                    }
+                },
+                "initialConfigurations": [
+                    {
+                        "type": "groovy",
+                        "request": "launch",
+                        "name": "Groovy: Launch Grails",
+                        "port": 5005
+                    },
+                    {
+                        "type": "groovy",
+                        "request": "attach",
+                        "name": "Groovy: Attach",
+                        "hostName": "localhost",
+                        "port": 5005
+                    }
+                ],
+                "configurationSnippets": [
+                    {
+                        "label": "Groovy: Launch Grails / Micronaut",
+                        "description": "Start the Gradle app with JDWP and attach the Java debugger",
+                        "body": {
+                            "type": "groovy",
+                            "request": "launch",
+                            "name": "Groovy: Launch Grails",
+                            "port": 5005
+                        }
+                    },
+                    {
+                        "label": "Groovy: Attach to JVM",
+                        "description": "Attach to a JVM already started with JDWP (port 5005)",
+                        "body": {
+                            "type": "groovy",
+                            "request": "attach",
+                            "name": "Groovy: Attach",
+                            "hostName": "localhost",
+                            "port": 5005
+                        }
+                    }
                 ]
             }
         ]

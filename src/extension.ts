@@ -9,6 +9,7 @@ import { registerJarContentProvider } from './groovy/jar_content_provider';
 import { GspDefinitionProvider } from './gsp/gsp_definition_provider';
 import { GspResourceLinkProvider } from './gsp/gsp_resource_link_provider';
 import { TagLibIndex } from './gsp/taglib_index';
+import { registerGroovyDebug } from './debug/groovy_debug';
 
 let classIndex: ClassIndex | undefined;
 
@@ -28,6 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     void ensureGspEmmetCoexistence();
     registerJarContentProvider(context);
+    registerGroovyDebug(context);
 
     const tagLibIndex = new TagLibIndex();
     context.subscriptions.push(tagLibIndex);

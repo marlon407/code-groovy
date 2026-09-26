@@ -1,0 +1,418 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { detectGrailsModules, GrailsModule } from '../groovy/grails_module_detector';
+
+export const DEFAULT_DEBUG_PORT = 5005;
+export const JAVA_DEBUG_EXTENSION_ID = 'vscjava.vscode-java-debug';
+
+export type GroovyDebugProjectKind = 'grails' | 'micronaut' | 'gradle' | 'unknown';
+
+export interface GroovyDebugInput {
+	request?: string;
+	name?: string;
+	hostName?: string;
+	port?: number | string;
+	task?: string;
+	module?: string;
+	sourcePaths?: string[];
+	gradleArgs?: string[];
+	projectName?: string;
+}
+
+export interface DetectedDebugProject {
+	kind: GroovyDebugProjectKind;
+	projectRoot: string;
+	gradlew?: string;
+	launchTask?: string;
+	launchModule?: string;
+	sourcePaths: string[];
+}
+
+export interface JavaAttachConfig {
+	type: 'java';
+	request: 'attach';
+	name: string;
+	hostName: string;
+	port: number;
+	sourcePaths: string[];
+	projectName?: string;
+}
+
+export interface GradleDebugCommand {
+	command: string;
+	args: string[];
+	cwd: string;
+}
+
+const PREFERRED_BOOT_MODULES = ['web', 'api', 'app'];
+
+const ROOT_SOURCE_CANDIDATES = [
+	'grails-app',
+	path.join('src', 'main', 'groovy'),
+	path.join('src', 'main', 'java'),
+	path.join('src', 'test', 'groovy'),
+	path.join('src', 'test', 'java'),
+	path.join('src', 'integration-test', 'groovy'),
+	path.join('src', 'integration-test', 'java')
+];
+
+export function parseDebugPort(value: number | string | undefined, fallback = DEFAULT_DEBUG_PORT): number {
+	if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+		return value;
+	}
+	if (typeof value === 'string' && value.trim()) {
+		const parsed = Number(value);
+		if (Number.isInteger(parsed) && parsed > 0) {
+			return parsed;
+		}
+	}
+	return fallback;
+}
+
+export function findGradleWrapper(startDir: string, platform: NodeJS.Platform = process.platform): string | undefined {
+	let current = startDir;
+	for (let depth = 0; depth < 6; depth++) {
+		const win = path.join(current, 'gradlew.bat');
+		const unix = path.join(current, 'gradlew');
+		if (platform === 'win32' && fs.existsSync(win)) {
+			return win;
+		}
+		if (fs.existsSync(unix)) {
+			return unix;
+		}
+		if (fs.existsSync(win)) {
+			return win;
+		}
+		const parent = path.dirname(current);
+		if (parent === current) {
+			break;
+		}
+		current = parent;
+	}
+	return undefined;
+}
+
+export function detectDebugProject(
+	workspaceRoot: string,
+	configuredModules: string[] = ['domain', 'web', 'api']
+): DetectedDebugProject {
+	const gradlew = findGradleWrapper(workspaceRoot);
+	const projectRoot = gradlew ? path.dirname(gradlew) : workspaceRoot;
+	const folders = [{ uri: { fsPath: workspaceRoot } }];
+	if (projectRoot !== workspaceRoot) {
+		folders.push({ uri: { fsPath: projectRoot } });
+	}
+	const modules = detectGrailsModules(folders, configuredModules);
+	const sourcePaths = collectDebugSourcePaths(workspaceRoot, modules);
+	if (projectRoot !== workspaceRoot) {
+		for (const extra of collectDebugSourcePaths(projectRoot, modules)) {
+			if (!sourcePaths.includes(extra)) {
+				sourcePaths.push(extra);
+			}
+		}
+	}
+	const bootModule = pickBootRunModule(modules);
+	const kind = detectProjectKind(workspaceRoot, modules, projectRoot);
+
+	return {
+		kind,
+		projectRoot,
+		gradlew,
+		launchTask: kind === 'grails' ? 'bootRun' : kind === 'unknown' ? undefined : 'run',
+		launchModule: kind === 'grails' ? bootModule?.name : undefined,
+		sourcePaths
+	};
+}
+
+export function collectDebugSourcePaths(workspaceRoot: string, modules: GrailsModule[] = []): string[] {
+	const paths: string[] = [];
+	for (const module of modules) {
+		for (const sourcePath of module.sourcePaths) {
+			pushUnique(paths, sourcePath);
+		}
+	}
+	for (const relative of ROOT_SOURCE_CANDIDATES) {
+		const candidate = path.join(workspaceRoot, relative);
+		if (fs.existsSync(candidate)) {
+			pushUnique(paths, candidate);
+		}
+	}
+	return paths;
+}
+
+export function buildGradleDebugCommand(
+	project: DetectedDebugProject,
+	input: GroovyDebugInput = {}
+): GradleDebugCommand | undefined {
+	if (!project.gradlew) {
+		return undefined;
+	}
+
+	const task = (input.task || project.launchTask || 'bootRun').trim();
+	const module = (input.module || project.launchModule || '').trim();
+	const gradleTask = task.includes(':')
+		? task
+		: module
+			? `:${module}:${task}`
+			: task;
+
+	const port = parseDebugPort(input.port);
+	const initFile = path.join(os.tmpdir(), `code-groovy-jdwp-${port}.gradle`);
+	try {
+		fs.writeFileSync(initFile, gradleJavaExecJdwpInitScript(port));
+	} catch {
+		return {
+			command: project.gradlew,
+			args: [gradleTask, ...(input.gradleArgs || [])],
+			cwd: project.projectRoot
+		};
+	}
+
+	return {
+		command: project.gradlew,
+		args: [gradleTask, '-I', initFile, ...(input.gradleArgs || [])],
+		cwd: project.projectRoot
+	};
+}
+
+export function jdwpAgentLib(port: number = DEFAULT_DEBUG_PORT): string {
+	return `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=${port}`;
+}
+
+export function gradleJavaExecJdwpInitScript(port: number = DEFAULT_DEBUG_PORT): string {
+	const agent = jdwpAgentLib(port).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+	return `
+allprojects { project ->
+  project.afterEvaluate {
+    project.tasks.withType(JavaExec) { task ->
+      def hasJdwp = task.jvmArgs.any { it.toString().contains('jdwp') }
+      if (!hasJdwp) {
+        task.jvmArgs '${agent}'
+      }
+    }
+  }
+}
+`.trim() + '\n';
+}
+
+export function toJavaAttachConfig(
+	input: GroovyDebugInput,
+	sourcePaths: string[],
+	defaultName = 'Groovy: Attach'
+): JavaAttachConfig {
+	const projectName = (input.projectName || '').trim();
+	return {
+		type: 'java',
+		request: 'attach',
+		name: input.name || defaultName,
+		hostName: (input.hostName || 'localhost').trim() || 'localhost',
+		port: parseDebugPort(input.port),
+		sourcePaths: input.sourcePaths?.length ? uniquePaths(input.sourcePaths) : uniquePaths(sourcePaths),
+		...(projectName ? { projectName } : {})
+	};
+}
+
+export function pickJavaProjectName(input: {
+	configured?: string;
+	launchModule?: string;
+	projectRoot?: string;
+	jdtNames?: string[];
+}): string | undefined {
+	const configured = input.configured?.trim();
+	if (configured) {
+		return configured;
+	}
+	const jdtNames = input.jdtNames || [];
+	const preferred = [
+		input.launchModule?.trim(),
+		input.projectRoot ? path.basename(input.projectRoot) : undefined
+	].filter((name): name is string => Boolean(name));
+
+	for (const name of preferred) {
+		if (jdtNames.includes(name)) {
+			return name;
+		}
+	}
+	for (const name of preferred) {
+		const match = jdtNames.find(candidate =>
+			candidate === name
+			|| candidate.endsWith(`.${name}`)
+			|| candidate.endsWith(`-${name}`)
+		);
+		if (match) {
+			return match;
+		}
+	}
+	return preferred[0] || jdtNames[0];
+}
+
+export function defaultLaunchName(kind: GroovyDebugProjectKind): string {
+	if (kind === 'grails') {
+		return 'Groovy: Launch Grails';
+	}
+	if (kind === 'micronaut') {
+		return 'Groovy: Launch Micronaut';
+	}
+	return 'Groovy: Launch';
+}
+
+export function defaultRequest(kind: GroovyDebugProjectKind, hasGradlew: boolean): 'launch' | 'attach' {
+	return kind !== 'unknown' && hasGradlew ? 'launch' : 'attach';
+}
+
+export type GradleDebugPhase = 'starting' | 'compiling' | 'compiled' | 'jdwp' | 'running' | 'failed';
+
+export interface GradleDebugStatus {
+	phase: GradleDebugPhase;
+	message: string;
+	task?: string;
+}
+
+export function isJdwpListening(output: string): boolean {
+	return /Listening for transport dt_socket at address:\s*\d+/i.test(output)
+		|| /Listening for transport dt_socket/i.test(output);
+}
+
+export function isAppRunning(output: string): boolean {
+	return /Grails application running at/i.test(output)
+		|| /Started \S+ in \d+(?:\.\d+)? seconds/i.test(output)
+		|| /Tomcat started on port/i.test(output)
+		|| /Netty started on port/i.test(output)
+		|| /Startup completed in/i.test(output);
+}
+
+export function readGradleDebugStatus(output: string): GradleDebugStatus {
+	if (/BUILD FAILED/i.test(output) || /FAILURE: Build failed/i.test(output)) {
+		return { phase: 'failed', message: 'Gradle build failed' };
+	}
+	if (isAppRunning(output)) {
+		return { phase: 'running', message: 'Application is running' };
+	}
+	if (isJdwpListening(output)) {
+		return { phase: 'jdwp', message: 'Debug port open, attaching…' };
+	}
+
+	const task = lastGradleTask(output);
+	if (task && isBootOrRunTask(task)) {
+		return { phase: 'compiled', message: 'Build finished, starting app…', task };
+	}
+	if (task) {
+		return {
+			phase: isCompileLikeTask(task) ? 'compiling' : 'starting',
+			message: `Gradle ${task}`,
+			task
+		};
+	}
+	return { phase: 'starting', message: 'Starting Gradle…' };
+}
+
+export function lastGradleTask(output: string): string | undefined {
+	const re = /> Task (:[^\s]+)/g;
+	let last: string | undefined;
+	let match: RegExpExecArray | null;
+	while ((match = re.exec(output)) !== null) {
+		last = match[1];
+	}
+	return last;
+}
+
+function isBootOrRunTask(task: string): boolean {
+	return /:(?:[\w.-]+:)*(?:bootRun|run)$/i.test(task);
+}
+
+function isCompileLikeTask(task: string): boolean {
+	return /compile|classes|jar|war|processResources/i.test(task);
+}
+
+export function buildInitialDebugConfigurations(): Array<GroovyDebugInput & { type: 'groovy'; name: string; request: string }> {
+	return [
+		{
+			type: 'groovy',
+			request: 'launch',
+			name: 'Groovy: Launch Grails',
+			port: DEFAULT_DEBUG_PORT
+		},
+		{
+			type: 'groovy',
+			request: 'attach',
+			name: 'Groovy: Attach',
+			hostName: 'localhost',
+			port: DEFAULT_DEBUG_PORT
+		}
+	];
+}
+
+export function dynamicDebugConfigurations<T extends { type?: string }>(
+	generated: T[],
+	existingLaunchConfigs: Array<{ type?: string }> | undefined
+): T[] {
+	if ((existingLaunchConfigs || []).some(config => config.type === 'groovy')) {
+		return [];
+	}
+	return generated;
+}
+
+function detectProjectKind(
+	workspaceRoot: string,
+	modules: GrailsModule[],
+	projectRoot: string
+): GroovyDebugProjectKind {
+	if (fs.existsSync(path.join(workspaceRoot, 'grails-app')) || modules.some(module => fs.existsSync(module.grailsAppPath))) {
+		return 'grails';
+	}
+
+	const buildText = readBuildScripts(projectRoot) + readBuildScripts(workspaceRoot);
+	if (/\bmicronaut\b/i.test(buildText)) {
+		return 'micronaut';
+	}
+	if (
+		findGradleWrapper(workspaceRoot)
+		|| fs.existsSync(path.join(projectRoot, 'build.gradle'))
+		|| fs.existsSync(path.join(projectRoot, 'build.gradle.kts'))
+	) {
+		return 'gradle';
+	}
+	return 'unknown';
+}
+
+function pickBootRunModule(modules: GrailsModule[]): GrailsModule | undefined {
+	for (const name of PREFERRED_BOOT_MODULES) {
+		const match = modules.find(module => module.name === name && fs.existsSync(module.grailsAppPath));
+		if (match) {
+			return match;
+		}
+	}
+	return modules.find(module => fs.existsSync(module.grailsAppPath));
+}
+
+function readBuildScripts(root: string): string {
+	let text = '';
+	for (const name of ['build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts']) {
+		const full = path.join(root, name);
+		if (!fs.existsSync(full)) {
+			continue;
+		}
+		try {
+			text += `\n${fs.readFileSync(full, 'utf8')}`;
+		} catch {
+			// ignore unreadable build files
+		}
+	}
+	return text;
+}
+
+function pushUnique(items: string[], value: string): void {
+	const normalized = path.normalize(value);
+	if (!items.includes(normalized)) {
+		items.push(normalized);
+	}
+}
+
+function uniquePaths(items: string[]): string[] {
+	const result: string[] = [];
+	for (const item of items) {
+		pushUnique(result, item);
+	}
+	return result;
+}

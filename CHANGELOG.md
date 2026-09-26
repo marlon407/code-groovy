@@ -3,6 +3,19 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+- Add Groovy/Grails debug: launch Gradle with `--debug-jvm` or attach to JDWP (port 5005) via Debugger for Java
+- Show Groovy debug hover/inline values and inject Grails implicits (`params`, `session`, `request`, `flash`) into the Variables view
+- Compare import order in ASCII (same as Organize Imports), so a util class before a `converter` subpackage is not flagged
+- Resolve debug hover/Locals from the JDI variable tree (`this`/`delegate`) instead of Java `evaluate`, which fails in Groovy frames
+- Wait for Language Support for Java before starting the Groovy debug adapter, so Play no longer fails with "Couldn't find a debug adapter descriptor"
+- Show debug values on hover instead of method Groovydoc; pass Java `projectName` and evaluate `params` via `GrailsWebRequest.lookup()`
+- Show Gradle compile / build / app-running status in the debug progress notification and status bar
+- Do not list duplicate Groovy launch configs when `launch.json` already has them
+- Start workspace indexing when the window opens, without waiting for a `.groovy` file
+- Enable JDWP on the app `JavaExec` via a Gradle init script instead of CLI `--debug-jvm`, which debugs Gradle itself
+- Declare Language Support for Java and Debugger for Java as extension dependencies in `package.json`
+
 ## [0.2.1] - 2026-09-04
 - Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)
 - Ctrl+click another TagLib from Groovy (`catalogTagLib.method` / `namespace.method`) and `g.render(template: "...")` the same way as in GSP
@@ -18,7 +31,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Match square brackets `[` `]` in GSP bracket matching
 - Include TagLib-style closure assignments (`def myTag = { ... }`) in document symbols / outline
 - Auto-import Groovy/Java types from workspace source and Gradle/Maven JAR classpaths via IntelliSense and a Quick Fix
-- Rank auto-import suggestions so workspace types like `Customer` stay above longer JAR names such as `CustomerAccountDTO`
+- Rank auto-import suggestions so workspace types like `Pet` stay above longer JAR names such as `PetProfileDTO`
 - Insert auto-imported lines in sorted position without reshuffling existing imports; warn (yellow) on out-of-order import lines
 - Add Ctrl+click Go to Definition for Groovy types, methods, services, and inherited methods (workspace + JAR sources when available)
 - Suggest workspace/Grails methods on member access (`receiver.`) using the same artifact hierarchy as Go to Definition
