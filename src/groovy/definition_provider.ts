@@ -88,6 +88,9 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		let occurrences: vscode.Location[];
 		if (isClassDeclaration) {
 			occurrences = this.callSiteIndex.lookupByReceiver(word).map(callSiteToLocation);
+			if (occurrences.length === 0) {
+				occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
+			}
 		} else {
 			const declaringClassName = path.basename(document.uri.fsPath, path.extname(document.uri.fsPath));
 			const receiverFieldName = grailsFieldNameForClass(declaringClassName);
