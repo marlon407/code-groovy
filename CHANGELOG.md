@@ -5,6 +5,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-28
+- Internal: add CI, contribution guidelines and automated release workflow (no functional changes)
+
 ## [0.2.2] - 2026-09-26
 - Add `codeGroovy.importOrder.warnings` to disable import-order **Problems** warnings without hiding other diagnostics ([#54](https://github.com/code-groovy/code-groovy/issues/54))
 
