@@ -59,6 +59,22 @@ suite('call_site_extractor', () => {
 		assert.strictEqual(records[0].methodName, 'updateItemAsPaid');
 		assert.strictEqual(records[0].receiverName, undefined);
 	});
+
+	test('extracts a receiver-qualified call using paren-less closure syntax', () => {
+		const text = 'exists AnticipationPartnerSettlementItemPixTransaction.where {';
+		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		assert.strictEqual(records.length, 1);
+		assert.strictEqual(records[0].methodName, 'where');
+		assert.strictEqual(records[0].receiverName, 'AnticipationPartnerSettlementItemPixTransaction');
+	});
+
+	test('ignores a bare identifier followed by { with no receiver', () => {
+		const cases = ['} else {', 'try {', 'finally {', 'class Widget {'];
+		for (const text of cases) {
+			const records = extractCallSites(text, '/tmp/Widget.groovy');
+			assert.strictEqual(records.length, 0, `expected no records for: ${text}`);
+		}
+	});
 });
 
 suite('excludeDeclarationCallSites', () => {

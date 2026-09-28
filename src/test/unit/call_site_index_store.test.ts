@@ -38,4 +38,29 @@ suite('call_site_index_store', () => {
 		store.add([record('save', 'partnerSettlement'), record('save', 'otherService')]);
 		assert.strictEqual(store.lookup('save').length, 2);
 	});
+
+	test('lookupByReceiver finds every call made on that receiver, regardless of method name', () => {
+		const store = new CallSiteIndexStore();
+		store.add([
+			record('where', 'AnticipationPartnerSettlementItemPixTransaction'),
+			record('createCriteria', 'AnticipationPartnerSettlementItemPixTransaction'),
+			record('save', 'otherService')
+		]);
+		const usages = store.lookupByReceiver('AnticipationPartnerSettlementItemPixTransaction');
+		assert.strictEqual(usages.length, 2);
+		assert.deepStrictEqual(usages.map(u => u.methodName).sort(), ['createCriteria', 'where']);
+	});
+
+	test('lookupByReceiver ignores calls with no receiver', () => {
+		const store = new CallSiteIndexStore();
+		store.add([record('validateCommercialInfoUpdate')]);
+		assert.strictEqual(store.lookupByReceiver('validateCommercialInfoUpdate').length, 0);
+	});
+
+	test('lookupByReceiver is empty after clear()', () => {
+		const store = new CallSiteIndexStore();
+		store.add([record('where', 'Widget')]);
+		store.clear();
+		assert.strictEqual(store.lookupByReceiver('Widget').length, 0);
+	});
 });

@@ -9,6 +9,7 @@ import { ProjectTagLibTag } from '../gsp/taglib_parser';
 import * as path from 'path';
 import { findWordOccurrences, grailsFieldNameForClass, callSiteToLocation } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
+import { parseDocumentSymbols } from './symbol_parser';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
 	constructor(
@@ -81,15 +82,22 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			return toLocations(meaningfulTargets);
 		}
 
-		const declaringClassName = path.basename(document.uri.fsPath, path.extname(document.uri.fsPath));
-		const receiverFieldName = grailsFieldNameForClass(declaringClassName);
+		const parsedSymbols = parseDocumentSymbols(document.getText(), document.uri.fsPath);
+		const isClassDeclaration = parsedSymbols.classes.some(cls => cls.line === declLine && cls.simpleName === word);
 
-		let occurrences: vscode.Location[] = this.callSiteIndex.lookup(word, receiverFieldName).map(callSiteToLocation);
-		if (occurrences.length === 0) {
-			occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
-		}
-		if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
-			occurrences = await findWordOccurrences(word, receiverFieldName, token);
+		let occurrences: vscode.Location[];
+		if (isClassDeclaration) {
+			occurrences = this.callSiteIndex.lookupByReceiver(word).map(callSiteToLocation);
+		} else {
+			const declaringClassName = path.basename(document.uri.fsPath, path.extname(document.uri.fsPath));
+			const receiverFieldName = grailsFieldNameForClass(declaringClassName);
+			occurrences = this.callSiteIndex.lookup(word, receiverFieldName).map(callSiteToLocation);
+			if (occurrences.length === 0) {
+				occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
+			}
+			if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
+				occurrences = await findWordOccurrences(word, receiverFieldName, token);
+			}
 		}
 		if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
 			occurrences = await findWordOccurrences(word, undefined, token);
