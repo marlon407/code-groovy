@@ -8,7 +8,7 @@ export interface CallSiteRecord {
 	column: number;
 }
 
-const CALL_SITE_RE = /\b(?:([A-Za-z_]\w*)\s*\.\s*)?([A-Za-z_]\w*)\s*\(/g;
+const CALL_SITE_RE = /\b(?:([A-Za-z_]\w*)\s*\.\s*)?([A-Za-z_]\w*)\s*([({])/g;
 
 export function extractCallSites(text: string, sourcePath: string): CallSiteRecord[] {
 	const records: CallSiteRecord[] = [];
@@ -16,13 +16,16 @@ export function extractCallSites(text: string, sourcePath: string): CallSiteReco
 
 	for (let lineNo = 0; lineNo < lines.length; lineNo++) {
 		const line = lines[lineNo];
-		if (!line.includes('(')) {
+		if (!line.includes('(') && !line.includes('{')) {
 			continue;
 		}
 		CALL_SITE_RE.lastIndex = 0;
 		let match: RegExpExecArray | null;
 		while ((match = CALL_SITE_RE.exec(line)) !== null) {
-			const [, receiverName, methodName] = match;
+			const [, receiverName, methodName, delimiter] = match;
+			if (delimiter === '{' && !receiverName) {
+				continue;
+			}
 			const methodStart = line.lastIndexOf(methodName, match.index + match[0].length - 1);
 			if (isInsideStringLiteral(line, methodStart)) {
 				continue;
