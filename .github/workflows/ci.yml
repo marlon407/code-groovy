@@ -36,7 +36,7 @@ jobs:
       - name: Package
         run: npx vsce package --out code-groovy.vsix
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: code-groovy-vsix
           path: code-groovy.vsix
