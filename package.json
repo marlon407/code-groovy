@@ -27,8 +27,12 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/marlon407/code-groovy"
+        "url": "https://github.com/code-groovy/code-groovy"
     },
+    "bugs": {
+        "url": "https://github.com/code-groovy/code-groovy/issues"
+    },
+    "homepage": "https://github.com/code-groovy/code-groovy#readme",
     "main": "./out/extension",
     "extensionDependencies": [
         "vscode.html-language-features"
