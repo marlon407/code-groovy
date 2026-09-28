@@ -3,6 +3,13 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+- Jump from a method or class declaration to where it's used (Cmd+Click / Go to Definition) when there's nothing else to navigate to, mirroring IntelliJ's "Go to Declaration or Usages"
+- Support Find All References for Groovy (`Shift+F12`), backed by an in-memory call-site index built during the existing indexing pass — no full workspace re-scan per request
+- Scope usage search by the Grails-convention receiver field name (field name = class name in camelCase) to avoid false positives across same-named methods in unrelated classes
+- Detect Groovy's paren-less closure call syntax (`receiver.method { ... }`, e.g. GORM's `.where`, `.each`, `.findAll`) as a usage, not just `receiver.method(...)`
+- Find usages of a class/domain type too (constructor calls and static/closure calls on it), not just methods
+
 ## [0.2.1] - 2026-09-04
 - Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)
 - Ctrl+click another TagLib from Groovy (`catalogTagLib.method` / `namespace.method`) and `g.render(template: "...")` the same way as in GSP
