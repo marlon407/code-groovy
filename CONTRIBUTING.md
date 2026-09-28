@@ -42,7 +42,23 @@ Pull requests are squash-merged, so the pull request title becomes the commit me
 
 ## Releases
 
-Releases to the Visual Studio Marketplace are made by the maintainers. Contributors do not need to bump the version in `package.json`.
+Releases to the Visual Studio Marketplace and Open VSX are made by the maintainers. Contributors do not need to bump the version in `package.json`.
+
+Release steps for maintainers:
+
+1. Open a pull request that bumps `version` in `package.json` and renames `## [Unreleased]` in `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD`, keeping a new empty `## [Unreleased]` above it.
+2. Squash-merge it into `master`.
+3. Tag the merge commit and push the tag:
+
+   ```bash
+   git fetch origin
+   git tag vX.Y.Z origin/master
+   git push origin vX.Y.Z
+   ```
+
+4. The `Release` workflow tests and packages the extension, then waits for approval on the `marketplace` environment. Approve it in the Actions tab to publish to both marketplaces and create the GitHub release.
+
+Only organization owners can push `v*` tags. The `Release` workflow can also be started manually from the Actions tab to build the package without publishing.
 
 ## Code of conduct
 
