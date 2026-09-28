@@ -10,6 +10,7 @@ import { GrailsArtifactIndex, indexGroovyFile } from './grails_artifact_index';
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
 import { ImportOrderDiagnostics } from './import_order_diagnostics';
+import { NoUsagesDiagnostics } from './no_usages_diagnostics';
 import { GroovydocHoverProvider } from './groovydoc_hover_provider';
 import { IndexStatusBar } from './index_status';
 import { listClassFqnsFromJar } from './jar_class_scanner';
@@ -53,6 +54,7 @@ export class ClassIndex implements vscode.Disposable {
 	private readonly referenceProvider = new ReferenceProvider(this.callSiteIndex);
 	private readonly renameProvider = new RenameProvider();
 	private readonly importOrderDiagnostics = new ImportOrderDiagnostics();
+	private readonly noUsagesDiagnostics = new NoUsagesDiagnostics(this.callSiteIndex);
 	private readonly disposables: vscode.Disposable[] = [];
 	private sourceTimer: ReturnType<typeof setTimeout> | undefined;
 	private classpathTimer: ReturnType<typeof setTimeout> | undefined;
@@ -74,8 +76,10 @@ export class ClassIndex implements vscode.Disposable {
 		this.statusBar.log('Code Groovy index started');
 
 		this.importOrderDiagnostics.start();
+		this.noUsagesDiagnostics.start();
 		this.disposables.push(
 			this.importOrderDiagnostics,
+			this.noUsagesDiagnostics,
 			vscode.languages.registerCompletionItemProvider(
 				{ language: 'groovy' },
 				this.completionProvider
@@ -261,6 +265,7 @@ export class ClassIndex implements vscode.Disposable {
 		this.store.add(types);
 		this.methodStore.add(methods);
 		this.callSiteIndex.add(excludeDeclarationCallSites(callSites, methods));
+		this.noUsagesDiagnostics.refreshAllOpenDocuments();
 
 		if (!showProgress && this.initialIndexComplete) {
 			this.finalizeStatus();
