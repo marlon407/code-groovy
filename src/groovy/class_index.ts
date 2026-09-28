@@ -5,7 +5,7 @@ import { detectGrailsModules, collectGrailsModuleSourceFiles } from './grails_mo
 import { DefinitionProvider } from './definition_provider';
 import { ReferenceProvider } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
-import { extractCallSites, CallSiteRecord } from './call_site_extractor';
+import { extractCallSites, excludeDeclarationCallSites, CallSiteRecord } from './call_site_extractor';
 import { GrailsArtifactIndex, indexGroovyFile } from './grails_artifact_index';
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
@@ -260,7 +260,7 @@ export class ClassIndex implements vscode.Disposable {
 		this.callSiteIndex.clear();
 		this.store.add(types);
 		this.methodStore.add(methods);
-		this.callSiteIndex.add(callSites);
+		this.callSiteIndex.add(excludeDeclarationCallSites(callSites, methods));
 
 		if (!showProgress && this.initialIndexComplete) {
 			this.finalizeStatus();

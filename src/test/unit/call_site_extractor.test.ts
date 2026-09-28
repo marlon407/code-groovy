@@ -1,5 +1,6 @@
 import * as assert from 'assert';
-import { extractCallSites } from '../../groovy/call_site_extractor';
+import { extractCallSites, excludeDeclarationCallSites } from '../../groovy/call_site_extractor';
+import { ParsedMethod } from '../../groovy/symbol_parser';
 
 suite('call_site_extractor', () => {
 	test('extracts a qualified call with its receiver', () => {
@@ -49,5 +50,54 @@ suite('call_site_extractor', () => {
 		const text = 'def x = (1 + 2)';
 		const records = extractCallSites(text, '/tmp/Widget.groovy');
 		assert.strictEqual(records.length, 0);
+	});
+
+	test('a method declaration is itself extracted as a call site with no receiver', () => {
+		const text = 'public void updateItemAsPaid(ReceivableAnticipationPartnerSettlementItem settlementItem) {';
+		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		assert.strictEqual(records.length, 1);
+		assert.strictEqual(records[0].methodName, 'updateItemAsPaid');
+		assert.strictEqual(records[0].receiverName, undefined);
+	});
+});
+
+suite('excludeDeclarationCallSites', () => {
+	test('removes the call site that matches a method declaration', () => {
+		const text = 'public void updateItemAsPaid(ReceivableAnticipationPartnerSettlementItem settlementItem) {';
+		const callSites = extractCallSites(text, '/tmp/Widget.groovy');
+		const methods: ParsedMethod[] = [
+			{ name: 'updateItemAsPaid', line: 0, column: text.indexOf('updateItemAsPaid'), classFqn: 'Widget', sourcePath: '/tmp/Widget.groovy' }
+		];
+		const filtered = excludeDeclarationCallSites(callSites, methods);
+		assert.strictEqual(filtered.length, 0);
+	});
+
+	test('keeps a real call site with a receiver even if the method name matches a declaration', () => {
+		const text = 'partnerSettlement.updateItemAsPaid(settlementItem)';
+		const callSites = extractCallSites(text, '/tmp/Widget.groovy');
+		const methods: ParsedMethod[] = [
+			{ name: 'updateItemAsPaid', line: 0, column: text.indexOf('updateItemAsPaid'), classFqn: 'Widget', sourcePath: '/tmp/Widget.groovy' }
+		];
+		const filtered = excludeDeclarationCallSites(callSites, methods);
+		assert.strictEqual(filtered.length, 1);
+	});
+
+	test('keeps a same-line recursive call while removing only the declaration itself', () => {
+		const text = 'def fib(n) { return n <= 1 ? n : fib(n) }';
+		const callSites = extractCallSites(text, '/tmp/Widget.groovy');
+		const methods: ParsedMethod[] = [
+			{ name: 'fib', line: 0, column: text.indexOf('fib'), classFqn: 'Widget', sourcePath: '/tmp/Widget.groovy' }
+		];
+		const filtered = excludeDeclarationCallSites(callSites, methods);
+		assert.strictEqual(filtered.length, 1);
+		assert.strictEqual(filtered[0].column, text.lastIndexOf('fib'));
+	});
+
+	test('keeps unrelated calls in other files untouched', () => {
+		const text = 'validateCommercialInfoUpdate(customerId, params)';
+		const callSites = extractCallSites(text, '/tmp/Other.groovy');
+		const methods: ParsedMethod[] = [];
+		const filtered = excludeDeclarationCallSites(callSites, methods);
+		assert.strictEqual(filtered.length, 1);
 	});
 });

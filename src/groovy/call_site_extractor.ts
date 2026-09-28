@@ -1,3 +1,5 @@
+import { ParsedMethod } from './symbol_parser';
+
 export interface CallSiteRecord {
 	methodName: string;
 	receiverName: string | undefined;
@@ -36,6 +38,24 @@ export function extractCallSites(text: string, sourcePath: string): CallSiteReco
 	}
 
 	return records;
+}
+
+export function excludeDeclarationCallSites(callSites: CallSiteRecord[], methods: ParsedMethod[]): CallSiteRecord[] {
+	const declarationKeys = new Set(
+		methods
+			.filter(method => method.sourcePath !== undefined)
+			.map(method => declarationKey(method.sourcePath as string, method.line, method.column, method.name))
+	);
+	return callSites.filter(callSite => {
+		if (callSite.receiverName) {
+			return true;
+		}
+		return !declarationKeys.has(declarationKey(callSite.sourcePath, callSite.line, callSite.column, callSite.methodName));
+	});
+}
+
+function declarationKey(sourcePath: string, line: number, column: number, name: string): string {
+	return `${sourcePath}::${line}::${column}::${name}`;
 }
 
 function isInsideStringLiteral(line: string, index: number): boolean {
