@@ -1,4 +1,5 @@
 import { ParsedMethod } from './symbol_parser';
+import { isInsideStringLiteral } from './text_scan_logic';
 
 export interface CallSiteRecord {
 	methodName: string;
@@ -59,11 +60,4 @@ export function excludeDeclarationCallSites(callSites: CallSiteRecord[], methods
 
 function declarationKey(sourcePath: string, line: number, column: number, name: string): string {
 	return `${sourcePath}::${line}::${column}::${name}`;
-}
-
-function isInsideStringLiteral(line: string, index: number): boolean {
-	const prefix = line.slice(0, index);
-	const doubleQuotes = (prefix.match(/(?<!\\)"/g) || []).length;
-	const singleQuotes = (prefix.match(/(?<!\\)'/g) || []).length;
-	return doubleQuotes % 2 === 1 || singleQuotes % 2 === 1;
 }

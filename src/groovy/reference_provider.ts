@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { detectGrailsModules, collectGrailsModuleSourceFiles } from './grails_module_detector';
 import { CallSiteIndexStore } from './call_site_index_store';
 import { CallSiteRecord } from './call_site_extractor';
+import { escapeRegExp, isInsideStringLiteral, isImportLine, isInsideLineComment } from './text_scan_logic';
 
 const SOURCE_EXCLUDE = '**/{node_modules,.git,build,target,out}/**';
 const CONCURRENCY = 64;
@@ -65,12 +66,15 @@ export async function findWordOccurrences(
 				if (!line.includes(word)) {
 					continue;
 				}
+				if (isImportLine(line)) {
+					continue;
+				}
 				lineRegex.lastIndex = 0;
 				let match: RegExpExecArray | null;
 				while ((match = lineRegex.exec(line)) !== null) {
 					const groupIndices = (match as RegExpExecArray & { indices: Array<[number, number]> }).indices[1];
 					const methodStart = groupIndices[0];
-					if (isInsideStringLiteral(line, methodStart)) {
+					if (isInsideStringLiteral(line, methodStart) || isInsideLineComment(line, methodStart)) {
 						continue;
 					}
 					results.push(new vscode.Location(
@@ -125,13 +129,3 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
 	}
 }
 
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function isInsideStringLiteral(line: string, index: number): boolean {
-	const prefix = line.slice(0, index);
-	const doubleQuotes = (prefix.match(/(?<!\\)"/g) || []).length;
-	const singleQuotes = (prefix.match(/(?<!\\)'/g) || []).length;
-	return doubleQuotes % 2 === 1 || singleQuotes % 2 === 1;
-}
