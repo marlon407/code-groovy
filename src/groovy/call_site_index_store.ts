@@ -2,6 +2,7 @@ import { CallSiteRecord } from './call_site_extractor';
 
 export class CallSiteIndexStore {
 	private readonly byMethodName = new Map<string, CallSiteRecord[]>();
+	private ready = false;
 
 	add(records: CallSiteRecord[]): void {
 		for (const record of records) {
@@ -9,6 +10,7 @@ export class CallSiteIndexStore {
 			list.push(record);
 			this.byMethodName.set(record.methodName, list);
 		}
+		this.ready = true;
 	}
 
 	clear(): void {
@@ -21,5 +23,9 @@ export class CallSiteIndexStore {
 			return all;
 		}
 		return all.filter(record => record.receiverName === receiverName);
+	}
+
+	isReady(): boolean {
+		return this.ready;
 	}
 }
