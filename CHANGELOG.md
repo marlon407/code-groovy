@@ -9,6 +9,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Scope usage search by the Grails-convention receiver field name (field name = class name in camelCase) to avoid false positives across same-named methods in unrelated classes
 - Detect Groovy's paren-less closure call syntax (`receiver.method { ... }`, e.g. GORM's `.where`, `.each`, `.findAll`) as a usage, not just `receiver.method(...)`
 - Find usages of a class/domain type too (constructor calls and static/closure calls on it), not just methods
+- Flag a method or class with no detected usages in the workspace with a native "unused" hint (grayed out, hover message, and an entry in the Problems panel) — same mechanism VS Code uses for unused imports
 
 ## [0.2.1] - 2026-09-04
 - Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)
