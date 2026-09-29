@@ -6,10 +6,9 @@ import { resolveGradleProjectRoot } from './classpath_resolver';
 import { resolveGspDefinitions } from '../gsp/gsp_definition_logic';
 import { resolveGroovyTagLibDefinitions } from '../gsp/groovy_taglib_navigation_logic';
 import { ProjectTagLibTag } from '../gsp/taglib_parser';
-import * as path from 'path';
-import { findWordOccurrences, grailsFieldNameForClass, callSiteToLocation } from './reference_provider';
+import { findWordOccurrences, callSiteToLocation } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
-import { parseDocumentSymbols } from './symbol_parser';
+import { findDeclarationTarget, resolveUsages } from './usage_lookup_logic';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
 	constructor(
@@ -82,34 +81,18 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			return toLocations(meaningfulTargets);
 		}
 
-		const parsedSymbols = parseDocumentSymbols(document.getText(), document.uri.fsPath);
-		const isClassDeclaration = parsedSymbols.classes.some(cls => cls.line === declLine && cls.simpleName === word);
+		const target = findDeclarationTarget(document.getText(), document.uri.fsPath, declLine, word);
+		if (!target) {
+			return undefined;
+		}
 
-		let occurrences: vscode.Location[];
-		if (isClassDeclaration) {
-			occurrences = this.callSiteIndex.lookupByReceiver(word).map(callSiteToLocation);
-			if (occurrences.length === 0) {
-				occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
+		const resolution = resolveUsages(target, this.callSiteIndex, 'navigate');
+		let occurrences = resolution.records.map(callSiteToLocation);
+		for (const scan of resolution.textScans) {
+			if (occurrences.length > 0) {
+				break;
 			}
-			if (occurrences.length === 0 && word.endsWith('Service')) {
-				occurrences = this.callSiteIndex.lookupByReceiver(grailsFieldNameForClass(word)).map(callSiteToLocation);
-			}
-			if (occurrences.length === 0) {
-				occurrences = await findWordOccurrences(word, undefined, token);
-			}
-		} else {
-			const declaringClassName = path.basename(document.uri.fsPath, path.extname(document.uri.fsPath));
-			const receiverFieldName = grailsFieldNameForClass(declaringClassName);
-			occurrences = this.callSiteIndex.lookup(word, receiverFieldName).map(callSiteToLocation);
-			if (occurrences.length === 0) {
-				occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
-			}
-			if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
-				occurrences = await findWordOccurrences(word, receiverFieldName, token);
-			}
-			if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
-				occurrences = await findWordOccurrences(word, undefined, token);
-			}
+			occurrences = await findWordOccurrences(word, scan.receiverFieldName, token);
 		}
 		const declUri = document.uri.toString();
 		const usages = occurrences.filter(location => !(location.uri.toString() === declUri && location.range.start.line === declLine));

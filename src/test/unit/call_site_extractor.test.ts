@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { extractCallSites, excludeDeclarationCallSites } from '../../groovy/call_site_extractor';
-import { ParsedMethod } from '../../groovy/symbol_parser';
+import { ParsedMethod, parseDocumentSymbols } from '../../groovy/symbol_parser';
 
 suite('call_site_extractor', () => {
 	test('extracts a qualified call with its receiver', () => {
@@ -75,6 +75,30 @@ suite('call_site_extractor', () => {
 			assert.strictEqual(records.length, 0, `expected no records for: ${text}`);
 		}
 	});
+
+	test('keeps the receiver of a safe-navigation call', () => {
+		const text = 'widgetService?.save(widget)';
+		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		assert.strictEqual(records.length, 1);
+		assert.strictEqual(records[0].methodName, 'save');
+		assert.strictEqual(records[0].receiverName, 'widgetService');
+		assert.strictEqual(records[0].column, text.indexOf('save'));
+	});
+
+	test('keeps the receiver of a spread call', () => {
+		const records = extractCallSites('widgets*.rename(value)', '/tmp/Widget.groovy');
+		assert.strictEqual(records.length, 1);
+		assert.strictEqual(records[0].methodName, 'rename');
+		assert.strictEqual(records[0].receiverName, 'widgets');
+	});
+
+	test('does not index control-flow keywords as calls', () => {
+		const cases = ['if (x) {', 'for (item in list) {', 'while (running) {', 'switch (kind) {', '} catch (Exception e) {', 'return (a + b)'];
+		for (const text of cases) {
+			const records = extractCallSites(text, '/tmp/Widget.groovy');
+			assert.deepStrictEqual(records.map(record => record.methodName), [], `expected no records for: ${text}`);
+		}
+	});
 });
 
 suite('excludeDeclarationCallSites', () => {
@@ -107,6 +131,34 @@ suite('excludeDeclarationCallSites', () => {
 		const filtered = excludeDeclarationCallSites(callSites, methods);
 		assert.strictEqual(filtered.length, 1);
 		assert.strictEqual(filtered[0].column, text.lastIndexOf('fib'));
+	});
+
+	test('removes declarations with generic/array return types and same-line annotations', () => {
+		const text = [
+			'class WidgetService {',
+			'    Map<String, List<Widget>> groupByName(Long id) {',
+			'    String[] names() {',
+			'    @Transactional(readOnly = true) def load() {',
+			'}'
+		].join('\n');
+		const sourcePath = '/tmp/WidgetService.groovy';
+		const methods = parseDocumentSymbols(text, sourcePath).methods;
+		const filtered = excludeDeclarationCallSites(extractCallSites(text, sourcePath), methods);
+		assert.deepStrictEqual(filtered.map(record => record.methodName), []);
+	});
+
+	test('keeps a call after return, which is not a declaration', () => {
+		const text = [
+			'class WidgetService {',
+			'    def build() {',
+			'        return rename(value)',
+			'    }',
+			'}'
+		].join('\n');
+		const sourcePath = '/tmp/WidgetService.groovy';
+		const methods = parseDocumentSymbols(text, sourcePath).methods;
+		const filtered = excludeDeclarationCallSites(extractCallSites(text, sourcePath), methods);
+		assert.deepStrictEqual(filtered.map(record => `${record.methodName}@${record.line}`), ['rename@2']);
 	});
 
 	test('keeps unrelated calls in other files untouched', () => {

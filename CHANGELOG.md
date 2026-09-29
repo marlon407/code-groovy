@@ -5,12 +5,13 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 - Jump from a method or class declaration to where it's used (Go to Definition — Ctrl+Click, Cmd+Click on macOS) when there's nothing else to navigate to, mirroring IntelliJ's "Go to Declaration or Usages"
-- Support Find All References for Groovy (`Shift+F12`), backed by an in-memory call-site index built during the existing indexing pass — no full workspace re-scan per request
-- Scope usage search by the Grails-convention receiver field name (field name = class name in camelCase) to avoid false positives across same-named methods in unrelated classes
-- Detect Groovy's paren-less closure call syntax (`receiver.method { ... }`, e.g. GORM's `.where`, `.each`, `.findAll`) as a usage, not just `receiver.method(...)`
+- Support Find All References for Groovy (`Shift+F12`) on methods and classes, using the same lookup as Go to Definition, backed by an in-memory call-site index built during the existing indexing pass — no full workspace re-scan per request
+- Scope usage search by the Grails-convention receiver field name (field name = class name in camelCase), plus calls from inside the declaring class, to avoid false positives across same-named methods in unrelated classes
+- Detect Groovy's paren-less closure call syntax (`receiver.method { ... }`, e.g. GORM's `.where`, `.each`, `.findAll`) and safe-navigation/spread calls (`receiver?.method()`, `list*.method()`) as usages, not just `receiver.method(...)`
 - Find usages of a class/domain type too (constructor calls and static/closure calls on it), not just methods
-- Fall back to a workspace text scan when Go to Definition (Ctrl+Click / Cmd+Click) on a class declaration finds nothing in the call-site index, since a class is commonly referenced only as a type (typed field/parameter), which the index alone does not capture
-- Recognize untyped Grails service injection (`def someService`) as a usage of the service class, both for Go to Definition (Ctrl+Click / Cmd+Click) navigation and for the no-usages hint, by matching the Grails field-name convention (field name = class name in camelCase) even when the class name itself never appears as literal text
+- Fall back to a workspace text scan when Go to Definition (Ctrl+Click / Cmd+Click) on a class declaration finds nothing in the call-site index, since a class is commonly referenced only as a type (typed field/parameter), which the index alone does not capture; the scan skips `import` lines and `//` comments
+- Recognize untyped Grails service injection (`def someService`) as a usage of the service class, for both Go to Definition (Ctrl+Click / Cmd+Click) and Find All References, by matching the Grails field-name convention (field name = class name in camelCase, kept as-is when it starts with an acronym like `URLService`) even when the class name itself never appears as literal text
+- Recognize method declarations with generic or array return types and same-line annotations (`Map<String, Object> build(...)`, `String[] names()`, `@Transactional def save()`), and stop treating `return foo(...)` as a declaration
 - Add Go to Definition (Ctrl+Click / Cmd+Click) for field and property access (`receiver.field`, including `this.field`), resolving the receiver's declared type from the enclosing document before falling back to the Grails naming convention
 
 ## [0.2.3] - 2026-09-28

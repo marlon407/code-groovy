@@ -38,7 +38,7 @@ export interface ParsedDocumentSymbols {
 const CLASS_LINE_RE =
 	/^\s*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed)\s+)*(class|interface|trait|enum)\s+([A-Za-z_]\w*)(?:\s+extends\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*))?(?:\s+implements\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*))?\b/;
 const METHOD_LINE_RE =
-	/^\s*(?:(?:public|protected|private|static|final|abstract|synchronized)\s+)*(?:def|[A-Za-z_]\w+)\s+([A-Za-z_]\w*)\s*\(/;
+	/^\s*(?:@[\w.]+(?:\([^)]*\))?\s+)*(?:(?:public|protected|private|static|final|abstract|synchronized)\s+)*(?:def|(?:void|boolean|byte|char|short|int|long|float|double|[A-Z][\w.]*(?:<[^()]*>)?)(?:\[\])*)\s+([A-Za-z_]\w*)\s*\(/;
 const FIELD_LINE_RE =
 	/^\s*(?:(?:public|protected|private|static|final)\s+)*([A-Z][A-Za-z0-9_]*)\s+([a-zA-Z_]\w*)\s*(?:=|;|$)/;
 const SERVICE_INJECT_RE = /^\s*def\s+([a-z][A-Za-z0-9_]*Service)\s*(?:=|;|$)/;

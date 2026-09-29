@@ -167,6 +167,36 @@ suite('definition_resolver', () => {
 		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy') && target.line === fieldLine));
 	});
 
+	test('uses the nearest preceding declaration when a variable name is reused with another type', () => {
+		const source = [
+			'package com.example.fixture.web',
+			'',
+			'import com.example.fixture.domain.ModelEntity',
+			'import com.example.fixture.domain.Widget',
+			'',
+			'class ReportController {',
+			'    def first() {',
+			'        ModelEntity item = new ModelEntity()',
+			'    }',
+			'',
+			'    def second() {',
+			'        Widget item = new Widget()',
+			'        return item.name',
+			'    }',
+			'}'
+		].join('\n');
+		const lines = source.split('\n');
+		const line = lines.findIndex(text => text.includes('item.name'));
+		const targets = buildContext(
+			source,
+			path.join(fixturesRoot, 'ReportController.groovy'),
+			line,
+			'name',
+			lines[line].lastIndexOf('name')
+		);
+		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy')));
+	});
+
 	test('go to own method definition via this.method()', () => {
 		const widgetSource = loadFixture('Widget.groovy');
 		const lines = widgetSource.split('\n');

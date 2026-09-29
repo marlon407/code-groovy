@@ -163,7 +163,7 @@ function resolveFieldTargets(context: DefinitionContext, before: string): Defini
 		return resolveOwnFieldTarget(context, fieldName);
 	}
 
-	const declaredType = declaredFieldTypeName(context.documentText, context.sourcePath, receiver);
+	const declaredType = declaredFieldTypeName(context.documentText, context.sourcePath, receiver, context.line);
 	const candidates = [...new Set([
 		...(declaredType ? [declaredType] : []),
 		...candidateClassNamesForReceiver(receiver)
@@ -199,9 +199,11 @@ function resolveOwnFieldTarget(context: DefinitionContext, fieldName: string): D
 	return [];
 }
 
-function declaredFieldTypeName(documentText: string, sourcePath: string, name: string): string | undefined {
-	const symbols = parseDocumentSymbols(documentText, sourcePath);
-	return symbols.fields.find(field => field.name === name)?.typeName;
+function declaredFieldTypeName(documentText: string, sourcePath: string, name: string, line: number): string | undefined {
+	const declarations = parseDocumentSymbols(documentText, sourcePath).fields.filter(field => field.name === name);
+	const preceding = declarations.filter(field => field.line <= line);
+	const nearest = preceding.length > 0 ? preceding[preceding.length - 1] : declarations[0];
+	return nearest?.typeName;
 }
 
 function findFieldInArtifactHierarchy(
