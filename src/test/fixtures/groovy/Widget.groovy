@@ -6,4 +6,12 @@ class Widget extends ModelEntity {
     void rename(String value) {
         name = value
     }
+
+    void selfRename(String value) {
+        this.rename(value)
+    }
+
+    String ownName() {
+        return this.name
+    }
 }

@@ -147,6 +147,60 @@ suite('definition_resolver', () => {
 		assert.ok(targets.some(target => target.uri.endsWith('ModelEntity.groovy')));
 	});
 
+	test('go to field definition via typed receiver (widget.name)', () => {
+		const controllerSource = loadFixture('WidgetController.groovy');
+		const lines = controllerSource.split('\n');
+		const line = lines.findIndex(text => text.includes('widget.name'));
+		const lineText = lines[line];
+		const wordStart = lineText.lastIndexOf('name');
+		const targets = buildContext(
+			controllerSource,
+			path.join(fixturesRoot, 'WidgetController.groovy'),
+			line,
+			'name',
+			wordStart
+		);
+		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy')));
+
+		const widgetSource = loadFixture('Widget.groovy');
+		const fieldLine = widgetSource.split('\n').findIndex(text => /^\s*String\s+name\b/.test(text));
+		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy') && target.line === fieldLine));
+	});
+
+	test('go to own method definition via this.method()', () => {
+		const widgetSource = loadFixture('Widget.groovy');
+		const lines = widgetSource.split('\n');
+		const line = lines.findIndex(text => text.includes('this.rename('));
+		const lineText = lines[line];
+		const wordStart = lineText.indexOf('rename', lineText.indexOf('this.'));
+		const targets = buildContext(
+			widgetSource,
+			path.join(fixturesRoot, 'Widget.groovy'),
+			line,
+			'rename',
+			wordStart
+		);
+		const declLine = lines.findIndex(text => /^\s*void\s+rename\(/.test(text));
+		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy') && target.line === declLine));
+	});
+
+	test('go to own field definition via this.field', () => {
+		const widgetSource = loadFixture('Widget.groovy');
+		const lines = widgetSource.split('\n');
+		const line = lines.findIndex(text => text.includes('this.name'));
+		const lineText = lines[line];
+		const wordStart = lineText.lastIndexOf('name');
+		const targets = buildContext(
+			widgetSource,
+			path.join(fixturesRoot, 'Widget.groovy'),
+			line,
+			'name',
+			wordStart
+		);
+		const declLine = lines.findIndex(text => /^\s*String\s+name\b/.test(text));
+		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy') && target.line === declLine));
+	});
+
 	test('does not resolve lowercase variable name as type', () => {
 		const controllerSource = loadFixture('WidgetController.groovy');
 		const line = 9;

@@ -11,6 +11,7 @@ import { buildImportMap, rankTypeMatches, resolveSimpleTypeName } from './type_r
 import { resolveJarTypeDefinition } from './sources_jar_resolver';
 import { candidateClassNamesForReceiver, serviceBeanToClassName } from './service_bean';
 import { findGrailsSourceForFqn } from './fqn_source_resolver';
+import { findFieldInClassHierarchy, parseDocumentSymbols } from './symbol_parser';
 
 export interface DefinitionTarget {
 	uri: string;
@@ -49,6 +50,11 @@ export function resolveDefinitions(context: DefinitionContext): DefinitionTarget
 		return methodTargets;
 	}
 
+	const fieldTargets = resolveFieldTargets(context, before);
+	if (fieldTargets.length > 0) {
+		return fieldTargets;
+	}
+
 	if (/^[A-Z]/.test(context.word)) {
 		const artifactTargetsResult = artifactTargets(context, context.word);
 		if (artifactTargetsResult.length > 0) {
@@ -84,13 +90,15 @@ function resolveMethodTargets(
 		if (!receiver) {
 			return [];
 		}
-		for (const className of candidateClassNamesForReceiver(receiver)) {
-			const found = findMethodInArtifactHierarchy(context, className, methodName);
-			if (found.length > 0) {
-				return found;
+		if (receiver !== 'this') {
+			for (const className of candidateClassNamesForReceiver(receiver)) {
+				const found = findMethodInArtifactHierarchy(context, className, methodName);
+				if (found.length > 0) {
+					return found;
+				}
 			}
+			return [];
 		}
-		return [];
 	}
 
 	const local = findMethodInText(context.documentText, methodName).map(loc => ({
@@ -134,6 +142,84 @@ function findMethodInArtifactHierarchy(
 		line: loc.line,
 		column: loc.column,
 		label: `${className}.${methodName}`
+	}));
+}
+
+function resolveFieldTargets(context: DefinitionContext, before: string): DefinitionTarget[] {
+	const fieldName = context.word;
+	if (!fieldName || /^[A-Z]/.test(fieldName)) {
+		return [];
+	}
+	if (!/\.\s*$/.test(before)) {
+		return [];
+	}
+
+	const receiver = getReceiverName(before);
+	if (!receiver) {
+		return [];
+	}
+
+	if (receiver === 'this') {
+		return resolveOwnFieldTarget(context, fieldName);
+	}
+
+	const declaredType = declaredFieldTypeName(context.documentText, context.sourcePath, receiver);
+	const candidates = [...new Set([
+		...(declaredType ? [declaredType] : []),
+		...candidateClassNamesForReceiver(receiver)
+	])];
+
+	for (const className of candidates) {
+		const found = findFieldInArtifactHierarchy(context, className, fieldName);
+		if (found.length > 0) {
+			return found;
+		}
+	}
+	return [];
+}
+
+function resolveOwnFieldTarget(context: DefinitionContext, fieldName: string): DefinitionTarget[] {
+	const ownField = parseDocumentSymbols(context.documentText, context.sourcePath).fields.find(
+		field => field.name === fieldName
+	);
+	if (ownField) {
+		return [{ uri: context.sourcePath, line: ownField.line, column: ownField.column, label: fieldName }];
+	}
+
+	const typeDecl = parseTypeDeclaration(context.documentText);
+	if (!typeDecl) {
+		return [];
+	}
+	for (const parent of typeDecl.parents) {
+		const inherited = findFieldInArtifactHierarchy(context, parent, fieldName);
+		if (inherited.length > 0) {
+			return inherited;
+		}
+	}
+	return [];
+}
+
+function declaredFieldTypeName(documentText: string, sourcePath: string, name: string): string | undefined {
+	const symbols = parseDocumentSymbols(documentText, sourcePath);
+	return symbols.fields.find(field => field.name === name)?.typeName;
+}
+
+function findFieldInArtifactHierarchy(
+	context: DefinitionContext,
+	className: string,
+	fieldName: string
+): DefinitionTarget[] {
+	const locations = findFieldInClassHierarchy(
+		filePath => readFileSafe(filePath),
+		name => findClassEntries(context, name),
+		className,
+		fieldName
+	);
+	return locations.map(loc => ({
+		uri: loc.filePath,
+		line: loc.line,
+		column: loc.column,
+		label: `${className}.${fieldName}`
 	}));
 }
 

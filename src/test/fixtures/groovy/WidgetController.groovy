@@ -10,4 +10,8 @@ class WidgetController {
         Widget widget = new Widget()
         return widgetService.save(widget)
     }
+
+    String widgetName(Widget widget) {
+        return widget.name
+    }
 }

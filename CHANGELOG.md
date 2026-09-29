@@ -9,6 +9,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Scope usage search by the Grails-convention receiver field name (field name = class name in camelCase) to avoid false positives across same-named methods in unrelated classes
 - Detect Groovy's paren-less closure call syntax (`receiver.method { ... }`, e.g. GORM's `.where`, `.each`, `.findAll`) as a usage, not just `receiver.method(...)`
 - Find usages of a class/domain type too (constructor calls and static/closure calls on it), not just methods
+- Fall back to a workspace text scan when Cmd+Click on a class declaration finds nothing in the call-site index, since a class is commonly referenced only as a type (typed field/parameter), which the index alone does not capture
+- Recognize untyped Grails service injection (`def someService`) as a usage of the service class, both for Cmd+Click navigation and for the no-usages hint, by matching the Grails field-name convention (field name = class name in camelCase) even when the class name itself never appears as literal text
+- Add Cmd+Click / Go to Definition for field and property access (`receiver.field`, including `this.field`), resolving the receiver's declared type from the enclosing document before falling back to the Grails naming convention
 
 ## [0.2.1] - 2026-09-04
 - Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)

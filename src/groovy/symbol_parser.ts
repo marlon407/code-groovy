@@ -12,6 +12,7 @@ export interface ParsedField {
 	name: string;
 	typeName: string;
 	line: number;
+	column: number;
 	classFqn: string;
 }
 
@@ -107,10 +108,12 @@ export function parseDocumentSymbols(text: string, sourcePath?: string): ParsedD
 		if (serviceMatch) {
 			const serviceName = serviceMatch[1];
 			const typeName = serviceNameToClassName(serviceName);
+			const column = line.indexOf(serviceName);
 			fields.push({
 				name: serviceName,
 				typeName,
 				line: i,
+				column: column >= 0 ? column : 0,
 				classFqn: currentClassFqn
 			});
 			continue;
@@ -118,10 +121,14 @@ export function parseDocumentSymbols(text: string, sourcePath?: string): ParsedD
 
 		const typedField = line.match(TYPED_FIELD_RE) ?? line.match(FIELD_LINE_RE);
 		if (typedField) {
+			const typeName = typedField[1];
+			const name = typedField[2];
+			const column = line.indexOf(name, line.indexOf(typeName) + typeName.length);
 			fields.push({
-				typeName: typedField[1],
-				name: typedField[2],
+				typeName,
+				name,
 				line: i,
+				column: column >= 0 ? column : 0,
 				classFqn: currentClassFqn
 			});
 		}
@@ -144,6 +151,52 @@ export function parseDocumentSymbols(text: string, sourcePath?: string): ParsedD
 	}
 
 	return { packageName, classes, methods, fields };
+}
+
+const MAX_HIERARCHY_DEPTH = 12;
+
+export interface FieldLocation {
+	filePath: string;
+	line: number;
+	column: number;
+}
+
+/** Looks up a field/property declaration on a type, walking extends/implements when not found locally. */
+export function findFieldInClassHierarchy(
+	readFile: (filePath: string) => string | undefined,
+	findEntries: (className: string) => Array<{ filePath: string }>,
+	className: string,
+	fieldName: string,
+	visited: Set<string> = new Set(),
+	depth = 0
+): FieldLocation[] {
+	if (!className || visited.has(className) || depth > MAX_HIERARCHY_DEPTH) {
+		return [];
+	}
+	visited.add(className);
+
+	for (const entry of findEntries(className)) {
+		const content = readFile(entry.filePath);
+		if (!content) {
+			continue;
+		}
+		const parsed = parseDocumentSymbols(content, entry.filePath);
+		const field = parsed.fields.find(candidate => candidate.name === fieldName);
+		if (field) {
+			return [{ filePath: entry.filePath, line: field.line, column: field.column }];
+		}
+
+		const ownClass = parsed.classes.find(cls => cls.simpleName === className);
+		const parents = [...(ownClass?.extendsTypes ?? []), ...(ownClass?.implementsTypes ?? [])];
+		for (const parent of parents) {
+			const inherited = findFieldInClassHierarchy(readFile, findEntries, parent, fieldName, visited, depth + 1);
+			if (inherited.length > 0) {
+				return inherited;
+			}
+		}
+	}
+
+	return [];
 }
 
 export function serviceNameToClassName(serviceName: string): string {
