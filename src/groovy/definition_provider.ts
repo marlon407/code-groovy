@@ -91,6 +91,9 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			if (occurrences.length === 0) {
 				occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
 			}
+			if (occurrences.length === 0 && word.endsWith('Service')) {
+				occurrences = this.callSiteIndex.lookupByReceiver(grailsFieldNameForClass(word)).map(callSiteToLocation);
+			}
 			if (occurrences.length === 0) {
 				occurrences = await findWordOccurrences(word, undefined, token);
 			}
