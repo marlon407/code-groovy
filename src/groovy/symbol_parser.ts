@@ -161,7 +161,6 @@ export interface FieldLocation {
 	column: number;
 }
 
-/** Looks up a field/property declaration on a type, walking extends/implements when not found locally. */
 export function findFieldInClassHierarchy(
 	readFile: (filePath: string) => string | undefined,
 	findEntries: (className: string) => Array<{ filePath: string }>,
