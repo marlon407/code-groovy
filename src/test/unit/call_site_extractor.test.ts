@@ -146,6 +146,21 @@ suite('call_site_extractor', () => {
 		assert.deepStrictEqual(confirms.map(record => record.receiverType), ['Customer', 'Payment', undefined]);
 	});
 
+	test('records the type of for-in and for-colon loop variables', () => {
+		const text = [
+			'def run(List items) {',
+			'    for (Payment payment in items) {',
+			'        payment.confirm()',
+			'    }',
+			'    for (Customer customer : items) {',
+			'        customer.confirm()',
+			'    }',
+			'}'
+		].join('\n');
+		const confirms = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'confirm');
+		assert.deepStrictEqual(confirms.map(record => record.receiverType), ['Payment', 'Customer']);
+	});
+
 	test('keeps parameter types from multi-line signatures and Allman braces', () => {
 		const text = [
 			'class Caller {',
@@ -360,6 +375,13 @@ suite('parseDocumentSymbols — masked source', () => {
 		assert.deepStrictEqual(symbols.methods.map(method => `${method.name}@${method.classFqn}`), ['close@Report']);
 		assert.deepStrictEqual(symbols.classes[0].extendsTypes, ['com.acme.BaseReport']);
 		assert.deepStrictEqual(symbols.classes[0].implementsTypes, ['Serializable', 'java.io.Closeable']);
+	});
+});
+
+suite('parseDocumentSymbols — modifiers', () => {
+	test('recognizes a declaration with only static and synchronized modifiers', () => {
+		const symbols = parseDocumentSymbols('class Holder {\n    public static synchronized getInstance() {\n    }\n}', '/tmp/Holder.groovy');
+		assert.deepStrictEqual(symbols.methods.map(method => method.name), ['getInstance']);
 	});
 });
 

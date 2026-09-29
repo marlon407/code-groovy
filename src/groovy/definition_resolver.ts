@@ -181,12 +181,12 @@ function resolveFieldTargets(context: DefinitionContext, before: string): Defini
 	}
 
 	const chainType = resolveReceiverChainType(context, before);
-	const declaredType = declaredFieldTypeName(context.documentText, context.sourcePath, receiver, context.line);
 	const scopedType = resolveReceiverType(context.documentText, context.line, receiver);
+	const declaredType = declaredFieldTypeName(context.documentText, context.sourcePath, receiver);
 	const candidates = [...new Set([
 		...(chainType ? [chainType] : []),
-		...(declaredType ? [declaredType] : []),
 		...(scopedType ? [simpleTypeName(scopedType)] : []),
+		...(declaredType ? [declaredType] : []),
 		...candidateClassNamesForReceiver(receiver)
 	])];
 
@@ -220,11 +220,8 @@ function resolveOwnFieldTarget(context: DefinitionContext, fieldName: string): D
 	return [];
 }
 
-function declaredFieldTypeName(documentText: string, sourcePath: string, name: string, line: number): string | undefined {
-	const declarations = parseDocumentSymbols(documentText, sourcePath).fields.filter(field => field.name === name);
-	const preceding = declarations.filter(field => field.line <= line);
-	const nearest = preceding.length > 0 ? preceding[preceding.length - 1] : declarations[0];
-	return nearest?.typeName;
+function declaredFieldTypeName(documentText: string, sourcePath: string, name: string): string | undefined {
+	return parseDocumentSymbols(documentText, sourcePath).fields.find(field => field.classMember && field.name === name)?.typeName;
 }
 
 function findFieldInArtifactHierarchy(
@@ -415,6 +412,9 @@ function resolveConstantTargets(context: DefinitionContext, before: string): Def
 	}
 
 	if (!/\.\s*$/.test(before)) {
+		if (!/^[A-Z][A-Z0-9_]*$/.test(name)) {
+			return [];
+		}
 		const ownConstant = own.enumConstants.find(constant => constant.name === name);
 		if (ownConstant) {
 			return [{ uri: context.sourcePath, line: ownConstant.line, column: ownConstant.column, label: name }];

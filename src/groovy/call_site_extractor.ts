@@ -28,7 +28,7 @@ interface ReceiverDeclaration {
 type ReceiverTypeResolver = (receiverName: string, line: number) => string | undefined;
 
 const CALL_SITE_RE = /\b(?:([A-Za-z_]\w*)\s*[?*]?\.\s*)?([A-Za-z_]\w*)\s*([({])/g;
-const TYPED_DECLARATION_RE = /\b([A-Z]\w*)(?:<[^()]*?>)?(?:\[\])*\s+([a-z_]\w*)(?=\s*(?:[=,;)]|->|$))/g;
+const TYPED_DECLARATION_RE = /\b([A-Z]\w*)(?:<[^()]*?>)?(?:\[\])*\s+([a-z_]\w*)(?=\s*(?:[=,;)]|->|:(?!:)|$)|\s+in\b)/g;
 const DEF_DECLARATION_RE =
 	/\bdef\s+([a-z_]\w*)\s*=\s*(?:new\s+([A-Z]\w*)|([A-Z]\w*)\s*\.\s*(?:get|read|load|lock|find|findWhere|findBy\w+|findOrCreate\w+|findOrSave\w+)\s*\()?/g;
 const CLOSURE_PARAMS_RE = /\{\s*([a-z_]\w*(?:\s*,\s*[a-z_]\w*)*)\s*->/g;
@@ -42,7 +42,7 @@ const RESERVED_WORDS = new Set([
 
 const internPool = new Map<string, string>();
 
-function intern(value: string): string {
+export function intern(value: string): string {
 	const pooled = internPool.get(value);
 	if (pooled !== undefined) {
 		return pooled;
@@ -180,7 +180,7 @@ export function receiverBefore(maskedText: string, offset: number): string | und
 	return identifier;
 }
 
-function receiverChain(maskedText: string, receiverOffset: number, receiver: string): string[] | undefined {
+export function receiverChain(maskedText: string, receiverOffset: number, receiver: string): string[] | undefined {
 	const segments = [receiver];
 	let i = skipWhitespaceBackward(maskedText, receiverOffset - 1);
 	while (maskedText[i] === '.') {

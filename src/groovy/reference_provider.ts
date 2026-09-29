@@ -114,7 +114,7 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
 				.map(match => new vscode.Location(document.uri, new vscode.Range(match.line, match.column, match.line, match.column + word.length)));
 		}
 
-		if (!findDeclarationTarget(documentText, document.uri.fsPath, line, word)) {
+		if (!findDeclarationTarget(documentText, document.uri.fsPath, line, word, wordRange.start.character)) {
 			return results;
 		}
 		const declUri = document.uri.toString();

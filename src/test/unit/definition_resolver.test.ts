@@ -409,3 +409,38 @@ suite('receiver chains', () => {
 		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line]), [['Widget.groovy', widgetLines.findIndex(text => /^\s*String\s+name\b/.test(text))]]);
 	});
 });
+
+suite('local variables and parameters', () => {
+	const sourcePath = path.join(fixturesRoot, 'LocalsController.groovy');
+	const at = (source: string, line: number, word: string, occurrence: 'first' | 'last' = 'first') => {
+		const lineText = source.split('\n')[line];
+		const wordStart = occurrence === 'first' ? lineText.indexOf(word) : lineText.lastIndexOf(word);
+		return buildContext(source, sourcePath, line, word, wordStart);
+	};
+
+	test('does not send a parameter or local variable to a class field with the same name', () => {
+		const source = [
+			'class LocalsController {',
+			'    String name',
+			'    void setName(String name) {',
+			'        this.name = name',
+			'    }',
+			'}'
+		].join('\n');
+		assert.deepStrictEqual(at(source, 3, 'name', 'last'), []);
+	});
+
+	test('prefers the parameter type over a same-named variable declared in another method', () => {
+		const source = [
+			'class LocalsController {',
+			'    def a() {',
+			'        Widget item = null',
+			'    }',
+			'    def b(WidgetBox item) {',
+			'        println item.name',
+			'    }',
+			'}'
+		].join('\n');
+		assert.deepStrictEqual(at(source, 5, 'name').map(target => path.basename(target.uri)), ['WidgetBox.groovy']);
+	});
+});

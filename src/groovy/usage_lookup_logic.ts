@@ -1,12 +1,17 @@
 import * as path from 'path';
-import { CallSiteRecord, CHAINED_RECEIVER, receiverBefore, resolveReceiverType } from './call_site_extractor';
+import { CallSiteRecord, CHAINED_RECEIVER, receiverBefore, receiverChain, resolveReceiverType } from './call_site_extractor';
 import { ParsedClassSymbol, parseDocumentSymbols } from './symbol_parser';
 import { maskNonCode } from './text_scan_logic';
 import { MethodDeclaration, parseImports } from './type_hierarchy_store';
 
 export type UsageTarget =
 	| { kind: 'class'; name: string }
-	| { kind: 'method'; name: string; className: string; classFqn?: string };
+	| { kind: 'method'; name: string; className: string; classFqn?: string; chain?: ReceiverChain };
+
+export interface ReceiverChain {
+	rootType: string;
+	path: string[];
+}
 
 export interface UsageLookupIndex {
 	lookup(methodName: string, receiverName?: string): CallSiteRecord[];
@@ -57,13 +62,15 @@ export function findDeclarationTarget(
 	documentText: string,
 	sourcePath: string,
 	line: number,
-	word: string
+	word: string,
+	wordStart?: number
 ): UsageTarget | undefined {
 	const symbols = parseDocumentSymbols(documentText, sourcePath);
-	if (symbols.classes.some(cls => cls.line === line && cls.simpleName === word)) {
+	const atWord = (column: number) => wordStart === undefined || column === wordStart;
+	if (symbols.classes.some(cls => cls.line === line && cls.simpleName === word && atWord(cls.column))) {
 		return { kind: 'class', name: word };
 	}
-	const method = symbols.methods.find(candidate => candidate.line === line && candidate.name === word);
+	const method = symbols.methods.find(candidate => candidate.line === line && candidate.name === word && atWord(candidate.column));
 	if (!method) {
 		return undefined;
 	}
@@ -81,7 +88,7 @@ export function findReferenceTarget(
 	wordStart: number,
 	word: string
 ): UsageTarget | undefined {
-	const declaration = findDeclarationTarget(documentText, sourcePath, line, word);
+	const declaration = findDeclarationTarget(documentText, sourcePath, line, word, wordStart);
 	if (declaration) {
 		return declaration;
 	}
@@ -93,8 +100,8 @@ export function findReferenceTarget(
 	const maskedLines = maskedText.split('\n');
 	const lineText = maskedLines[line] ?? '';
 	const lineStart = maskedLines.slice(0, line).reduce((offset, text) => offset + text.length + 1, 0);
-	const receiver = lineText.slice(0, wordStart).match(/([A-Za-z_]\w*)\s*[?*]?\.\s*$/)?.[1]
-		?? receiverBefore(maskedText, lineStart + wordStart);
+	const receiverMatch = lineText.slice(0, wordStart).match(/([A-Za-z_]\w*)\s*[?*]?\.\s*$/);
+	const receiver = receiverMatch?.[1] ?? receiverBefore(maskedText, lineStart + wordStart);
 	const after = lineText.slice(wordStart + word.length);
 	const isCall = /^\s*\(/.test(after) || (receiver !== undefined && /^\s*\{/.test(after));
 	if (!isCall || receiver === CHAINED_RECEIVER) {
@@ -108,6 +115,18 @@ export function findReferenceTarget(
 		}
 		const parentFqn = resolveTypeFqn(parent, owner?.packageName ?? '', parseImports(documentText));
 		return { kind: 'method', name: word, className: simpleName(parent), ...(parentFqn ? { classFqn: parentFqn } : {}) };
+	}
+	const chain = receiverMatch && receiverMatch.index !== undefined
+		? receiverChain(maskedText, lineStart + receiverMatch.index, receiverMatch[1])
+		: undefined;
+	if (chain) {
+		const rootType = chainRootTypeAt(documentText, sourcePath, line, chain[0]);
+		return {
+			kind: 'method',
+			name: word,
+			className: capitalize(chain[chain.length - 1]),
+			...(rootType ? { chain: { rootType, path: chain.slice(1) } } : {})
+		};
 	}
 	if (receiver && receiver !== 'this') {
 		return { kind: 'method', name: word, className: receiverClassName(documentText, line, receiver) };
@@ -137,7 +156,10 @@ export function resolveUsages(
 		return { records, textScans: files.length > 0 ? [{ files }] : [], superDeclarations: [] };
 	}
 
-	const scope = buildScope(target, hierarchy);
+	const chainType = target.chain && hierarchy?.memberType
+		? chainResolver(hierarchy)(target.chain.rootType, target.chain.path)
+		: undefined;
+	const scope = buildScope(chainType ? { name: target.name, className: chainType } : target, hierarchy);
 	const records = index.lookup(target.name).filter(record => isScopedCall(record, scope));
 	const superDeclarations = records.length > 0 || !hierarchy
 		? []
@@ -248,6 +270,21 @@ function isScopedCall(record: CallSiteRecord, scope: UsageScope): boolean {
 		return scope.classNames.has(record.receiverType);
 	}
 	return scope.fieldNames.has(record.receiverName) || scope.classNames.has(record.receiverName);
+}
+
+function chainRootTypeAt(documentText: string, sourcePath: string, line: number, root: string): string | undefined {
+	if (root === 'this') {
+		return owningClassName(documentText, sourcePath, line);
+	}
+	if (/^[A-Z]/.test(root)) {
+		return root;
+	}
+	const declared = resolveReceiverType(documentText, line, root);
+	return declared ? simpleName(declared) : undefined;
+}
+
+function capitalize(name: string): string {
+	return /^[A-Z]/.test(name) ? name : name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 function receiverClassName(documentText: string, line: number, receiver: string): string {

@@ -61,7 +61,7 @@ const CLASS_LINE_RE =
 const MODIFIER = '(?:public|protected|private|static|final|abstract|synchronized)';
 const RETURN_TYPE = '(?:def|(?:void|boolean|byte|char|short|int|long|float|double|[A-Z][\\w.]*(?:<[^()]*>)?)(?:\\[\\])*)';
 const METHOD_LINE_RE = new RegExp(
-	`^\\s*(?:@[\\w.]+(?:\\([^)]*\\))?\\s+)*(?:(?:${MODIFIER}\\s+)*${RETURN_TYPE}|(?:${MODIFIER}\\s+)*(?:public|protected|private|static|final|abstract))\\s+([A-Za-z_]\\w*)\\s*\\(`
+	`^\\s*(?:@[\\w.]+(?:\\([^)]*\\))?\\s+)*(?:(?:${MODIFIER}\\s+)*${RETURN_TYPE}|(?:${MODIFIER}\\s+)*(?:public|protected|private|static|final|abstract|synchronized))\\s+([A-Za-z_]\\w*)\\s*\\(`
 );
 const FIELD_LINE_RE =
 	/^\s*(?:(?:public|protected|private|static|final)\s+)*([A-Z][A-Za-z0-9_]*)\s+([a-zA-Z_]\w*)\s*(?:=|;|$)/;

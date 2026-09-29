@@ -5,7 +5,7 @@ import { detectGrailsModules, collectGrailsModuleSourceFiles } from './grails_mo
 import { DefinitionProvider } from './definition_provider';
 import { ReferenceProvider } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
-import { analyzeSource, excludeDeclarationCallSites, CallSiteRecord } from './call_site_extractor';
+import { analyzeSource, excludeDeclarationCallSites, CallSiteRecord, intern } from './call_site_extractor';
 import { GrailsArtifactEntry, GrailsArtifactIndex, indexGroovyFile } from './grails_artifact_index';
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
@@ -432,17 +432,28 @@ async function indexSourceFile(filePath: string): Promise<IndexedSource | undefi
 		const symbols = parseDocumentSymbols(text, filePath, maskedText);
 		const indexed = indexWorkspaceDocument(text, filePath, symbols);
 		const analysis = analyzeSource(text, filePath, symbols, maskedText);
+		const artifactEntry = filePath.endsWith('.groovy') ? indexGroovyFile(filePath) : undefined;
 		return {
-			types: indexed.types,
-			methods: indexed.methods,
+			types: indexed.types.map(type => ({
+				...type,
+				simpleName: intern(type.simpleName),
+				fqn: intern(type.fqn),
+				extendsTypes: type.extendsTypes?.map(intern),
+				implementsTypes: type.implementsTypes?.map(intern)
+			})),
+			methods: indexed.methods.map(method => ({ ...method, name: intern(method.name), classFqn: intern(method.classFqn) })),
 			callSites: excludeDeclarationCallSites(analysis.callSites, indexed.methods),
 			typeMentions: analysis.typeMentions,
-			imports: parseImports(text),
+			imports: parseImports(text).map(intern),
 			fields: symbols.fields
 				.filter(field => field.classMember)
-				.map(field => ({ classFqn: field.classFqn, name: field.name, typeName: field.typeName })),
-			enumConstants: symbols.enumConstants.map(constant => ({ classFqn: constant.enumFqn, name: constant.name })),
-			artifactEntry: filePath.endsWith('.groovy') ? indexGroovyFile(filePath) : undefined
+				.map(field => ({ classFqn: intern(field.classFqn), name: intern(field.name), typeName: intern(field.typeName) })),
+			enumConstants: symbols.enumConstants.map(constant => ({ classFqn: intern(constant.enumFqn), name: intern(constant.name) })),
+			artifactEntry: artifactEntry && {
+				...artifactEntry,
+				className: intern(artifactEntry.className),
+				packageName: artifactEntry.packageName === undefined ? undefined : intern(artifactEntry.packageName)
+			}
 		};
 	} catch {
 		return undefined;

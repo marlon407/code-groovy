@@ -69,7 +69,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 
 		const word = document.getText(wordRange);
 		const declLine = wordRange.start.line;
-		const target = findDeclarationTarget(document.getText(), document.uri.fsPath, declLine, word);
+		const target = findDeclarationTarget(document.getText(), document.uri.fsPath, declLine, word, wordRange.start.character);
 		if (!target) {
 			const targets = resolveDefinitions({
 				documentText: document.getText(),

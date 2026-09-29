@@ -108,6 +108,13 @@ suite('findDeclarationTarget', () => {
 		});
 	});
 
+	test('treats a same-line call with the declared name as a call, not as the declaration', () => {
+		const text = 'class Invoice {\n    Boolean isPaid() { return payment.isPaid() }\n}';
+		const lineText = text.split('\n')[1];
+		assert.strictEqual(findDeclarationTarget(text, '/tmp/Invoice.groovy', 1, 'isPaid', lineText.lastIndexOf('isPaid')), undefined);
+		assert.strictEqual(findDeclarationTarget(text, '/tmp/Invoice.groovy', 1, 'isPaid', lineText.indexOf('isPaid'))?.kind, 'method');
+	});
+
 	test('treats a constructor declaration as its class', () => {
 		assert.deepStrictEqual(findDeclarationTarget(source, WIDGET_SERVICE, 8, 'WidgetService'), { kind: 'class', name: 'WidgetService' });
 	});
@@ -379,6 +386,17 @@ suite('resolveUsages — receiver chains', () => {
 	test('resolves property chains, enum constants and inherited fields through the index', () => {
 		const resolution = resolveUsages({ kind: 'method', name: 'isFinished', className: 'Status', classFqn: 'Status' }, index, 'navigate', hierarchy);
 		assert.deepStrictEqual(describe(resolution.records), ['/tmp/Caller.groovy:2', '/tmp/Caller.groovy:3', '/tmp/Caller.groovy:6']);
+	});
+
+	test('Find All References from a chained call resolves the chain like the index', () => {
+		const lines = files['/tmp/Caller.groovy'].split('\n');
+		const target = findReferenceTarget(files['/tmp/Caller.groovy'], '/tmp/Caller.groovy', 2, lines[2].indexOf('isFinished'), 'isFinished');
+		assert.deepStrictEqual(target, { kind: 'method', name: 'isFinished', className: 'Status', chain: { rootType: 'Order', path: ['status'] } });
+		const fromCall = resolveUsages(target!, index, 'references', hierarchy);
+		const fromDeclaration = resolveUsages({ kind: 'method', name: 'isFinished', className: 'Status', classFqn: 'Status' }, index, 'references', hierarchy);
+		assert.deepStrictEqual(describe(fromCall.records), describe(fromDeclaration.records));
+		const buyerTarget = findReferenceTarget(files['/tmp/Caller.groovy'], '/tmp/Caller.groovy', 4, lines[4].indexOf('isFinished'), 'isFinished');
+		assert.deepStrictEqual(describe(resolveUsages(buyerTarget!, index, 'references', hierarchy).records), ['/tmp/Caller.groovy:4', '/tmp/Caller.groovy:5']);
 	});
 
 	test('does not type the end of a chain with a local variable of the same name', () => {
