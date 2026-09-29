@@ -132,6 +132,20 @@ suite('definition_resolver', () => {
 		assert.ok(targets.some(target => target.uri.endsWith('WidgetService.groovy')));
 	});
 
+	test('go to a method through a variable whose declared type differs from its name', () => {
+		const source = [
+			'class ReportService {',
+			'    def run() {',
+			'        Widget current = build()',
+			'        current.rename("x")',
+			'    }',
+			'}'
+		].join('\n');
+		const wordStart = source.split('\n')[3].indexOf('rename');
+		const targets = buildContext(source, path.join(fixturesRoot, 'ReportService.groovy'), 3, 'rename', wordStart);
+		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy')));
+	});
+
 	test('go to inherited method on supertype', () => {
 		const serviceSource = loadFixture('WidgetService.groovy');
 		const line = 6;

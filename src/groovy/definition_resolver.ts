@@ -12,6 +12,7 @@ import { resolveJarTypeDefinition } from './sources_jar_resolver';
 import { candidateClassNamesForReceiver, serviceBeanToClassName } from './service_bean';
 import { findGrailsSourceForFqn } from './fqn_source_resolver';
 import { findFieldInClassHierarchy, parseDocumentSymbols } from './symbol_parser';
+import { resolveReceiverType } from './call_site_extractor';
 
 export interface DefinitionTarget {
 	uri: string;
@@ -91,7 +92,12 @@ function resolveMethodTargets(
 			return [];
 		}
 		if (receiver !== 'this') {
-			for (const className of candidateClassNamesForReceiver(receiver)) {
+			const declaredType = resolveReceiverType(context.documentText, context.line, receiver);
+			const candidates = [...new Set([
+				...(declaredType ? [simpleTypeName(declaredType)] : []),
+				...candidateClassNamesForReceiver(receiver)
+			])];
+			for (const className of candidates) {
 				const found = findMethodInArtifactHierarchy(context, className, methodName);
 				if (found.length > 0) {
 					return found;
@@ -399,4 +405,8 @@ function readFileSafe(filePath: string): string | undefined {
 
 function escapeRegex(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function simpleTypeName(typeName: string): string {
+	return typeName.includes('.') ? typeName.slice(typeName.lastIndexOf('.') + 1) : typeName;
 }
