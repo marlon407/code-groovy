@@ -13,6 +13,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Recognize untyped Grails service injection (`def someService`) as a usage of the service class, both for Go to Definition (Ctrl+Click / Cmd+Click) navigation and for the no-usages hint, by matching the Grails field-name convention (field name = class name in camelCase) even when the class name itself never appears as literal text
 - Add Go to Definition (Ctrl+Click / Cmd+Click) for field and property access (`receiver.field`, including `this.field`), resolving the receiver's declared type from the enclosing document before falling back to the Grails naming convention
 
+## [0.2.3] - 2026-09-28
+- Internal: add CI, contribution guidelines and automated release workflow (no functional changes)
+
+## [0.2.2] - 2026-09-26
+- Add `codeGroovy.importOrder.warnings` to disable import-order **Problems** warnings without hiding other diagnostics ([#54](https://github.com/code-groovy/code-groovy/issues/54))
+
 ## [0.2.1] - 2026-09-04
 - Do not treat `identifier / number` as a Groovy slashy string (division stays division; `= /regex/` still highlights)
 - Ctrl+click another TagLib from Groovy (`catalogTagLib.method` / `namespace.method`) and `g.render(template: "...")` the same way as in GSP

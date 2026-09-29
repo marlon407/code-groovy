@@ -2,7 +2,7 @@
     "name": "code-groovy",
     "displayName": "Code Groovy",
     "description": "Groovy and GSP support for VS Code and Cursor",
-    "version": "0.2.1",
+    "version": "0.2.3",
     "publisher": "marlon407",
     "license": "MIT",
     "engines": {
@@ -27,8 +27,12 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/marlon407/code-groovy"
+        "url": "https://github.com/code-groovy/code-groovy"
     },
+    "bugs": {
+        "url": "https://github.com/code-groovy/code-groovy/issues"
+    },
+    "homepage": "https://github.com/code-groovy/code-groovy#readme",
     "main": "./out/extension",
     "extensionDependencies": [
         "vscode.html-language-features"
@@ -85,6 +89,11 @@
                         "api"
                     ],
                     "markdownDescription": "Gradle submodules to index when settings.gradle is found."
+                },
+                "codeGroovy.importOrder.warnings": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show **Problems** warnings when Groovy `import` lines are not in the same order as **Organize imports** would use. Set to `false` to hide import-order warnings only (other diagnostics are unchanged)."
                 }
             }
         },
