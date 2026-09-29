@@ -48,17 +48,46 @@ Release steps for maintainers:
 
 1. Open a pull request that bumps `version` in `package.json` and renames `## [Unreleased]` in `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD`, keeping a new empty `## [Unreleased]` above it.
 2. Squash-merge it into `master`.
-3. Tag the merge commit and push the tag:
+3. Tag the squash commit created by that pull request and push the tag. Use the commit SHA rather than `origin/master`, so the tag does not land on a later commit if something else was merged in the meantime:
 
    ```bash
    git fetch origin
-   git tag vX.Y.Z origin/master
+   git log --oneline origin/master   # find the "Bump version to x.y.z (#NN)" commit
+   git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
-4. The `Release` workflow tests and packages the extension, then waits for approval on the `marketplace` environment. Approve it in the Actions tab to publish to both marketplaces and create the GitHub release.
+4. The `Release` workflow tests and packages the extension, then waits for approval on the `marketplace` environment. Approve it in the Actions tab to publish and create the GitHub release.
 
-Only organization owners can push `v*` tags. The `Release` workflow can also be started manually from the Actions tab to build the package without publishing.
+Only organization owners can push `v*` tags. The `Release` workflow can also be started manually from the Actions tab to build the package without publishing: the publish and GitHub release jobs only run for `v*` tags.
+
+### Checks performed before publishing
+
+The build job fails, and nothing is published, when:
+
+- the tag does not match `version` in `package.json` (`v0.2.3` requires `"version": "0.2.3"`);
+- the tagged commit is not on `master`;
+- `CHANGELOG.md` has no `## [x.y.z]` heading for the version;
+- unit or integration tests fail.
+
+To fix a wrong tag, delete it locally and on GitHub (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`), fix `master` through a pull request, and tag again.
+
+### Secrets
+
+Publishing uses secrets stored on the `marketplace` environment (Settings → Environments → `marketplace`):
+
+| Secret | Used for | Required |
+|---|---|---|
+| `VSCE_PAT` | Visual Studio Marketplace (publisher `marlon407`) | Yes |
+| `OVSX_PAT` | [Open VSX](https://open-vsx.org) | No: when missing, the Open VSX step is skipped with a warning |
+
+To create `VSCE_PAT`, go to [Azure DevOps](https://dev.azure.com) with the account that owns the `marlon407` publisher, open **User settings → Personal access tokens → New Token**, set **Organization** to **All accessible organizations** and grant the **Marketplace → Manage** scope. Personal access tokens expire: when publishing fails with an authentication error, create a new token and update the secret.
+
+To create `OVSX_PAT`, sign in to [open-vsx.org](https://open-vsx.org), create an access token under your user settings, and make sure the `marlon407` namespace exists and you are a member of it.
+
+### When publishing fails
+
+If the publish job fails after the tag is pushed (for example because of an expired token), fix the cause and use **Re-run failed jobs** on the same workflow run. Both publish commands use `--skip-duplicate`, so re-running is safe even if one marketplace already has the version. There is no need to delete the tag or bump the version.
 
 ## Code of conduct
 
