@@ -1,6 +1,7 @@
 import * as path from 'path';
-import { CallSiteRecord, resolveReceiverType } from './call_site_extractor';
+import { CallSiteRecord, CHAINED_RECEIVER, resolveReceiverType } from './call_site_extractor';
 import { parseDocumentSymbols } from './symbol_parser';
+import { MethodDeclaration } from './type_hierarchy_store';
 
 export type UsageTarget =
 	| { kind: 'class'; name: string }
@@ -13,6 +14,19 @@ export interface UsageLookupIndex {
 	isReady(): boolean;
 }
 
+export interface UsageHierarchy {
+	ancestorsOf(className: string): string[];
+	descendantsOf(className: string): string[];
+	methodDeclarations(className: string, methodName: string): MethodDeclaration[];
+}
+
+interface UsageScope {
+	classNames: Set<string>;
+	subclassNames: Set<string>;
+	fieldNames: Set<string>;
+	ancestorsDeclaring: string[];
+}
+
 export interface TextScan {
 	receiverFieldName?: string;
 	files?: string[];
@@ -21,6 +35,7 @@ export interface TextScan {
 export interface UsageResolution {
 	records: CallSiteRecord[];
 	textScans: TextScan[];
+	superDeclarations: MethodDeclaration[];
 }
 
 export type UsageMode = 'navigate' | 'references';
@@ -81,7 +96,12 @@ export function findReferenceTarget(
 	return { kind: 'method', name: word, className: owningClassName(documentText, sourcePath, line) };
 }
 
-export function resolveUsages(target: UsageTarget, index: UsageLookupIndex, mode: UsageMode): UsageResolution {
+export function resolveUsages(
+	target: UsageTarget,
+	index: UsageLookupIndex,
+	mode: UsageMode,
+	hierarchy?: UsageHierarchy
+): UsageResolution {
 	if (target.kind === 'class') {
 		const records = uniqueRecords([
 			...index.lookupByReceiver(target.name),
@@ -89,21 +109,38 @@ export function resolveUsages(target: UsageTarget, index: UsageLookupIndex, mode
 			...(target.name.endsWith('Service') ? index.lookupByReceiver(grailsFieldNameForClass(target.name)) : [])
 		]);
 		if (mode === 'navigate' && records.length > 0) {
-			return { records, textScans: [] };
+			return { records, textScans: [], superDeclarations: [] };
 		}
 		if (!index.isReady()) {
-			return { records, textScans: [{}] };
+			return { records, textScans: [{}], superDeclarations: [] };
 		}
 		const files = index.filesMentioning(target.name);
-		return { records, textScans: files.length > 0 ? [{ files }] : [] };
+		return { records, textScans: files.length > 0 ? [{ files }] : [], superDeclarations: [] };
 	}
 
-	const fieldName = grailsFieldNameForClass(target.className);
-	const records = index.lookup(target.name).filter(record => isScopedCall(record, target.className, fieldName));
+	const scope = buildScope(target.name, target.className, hierarchy);
+	const records = index.lookup(target.name).filter(record => isScopedCall(record, scope));
+	const superDeclarations = records.length > 0 || !hierarchy
+		? []
+		: scope.ancestorsDeclaring.flatMap(ancestor => hierarchy.methodDeclarations(ancestor, target.name));
 	if (records.length > 0 || index.isReady()) {
-		return { records, textScans: [] };
+		return { records, textScans: [], superDeclarations };
 	}
-	return { records, textScans: [{ receiverFieldName: fieldName }] };
+	return { records, textScans: [{ receiverFieldName: grailsFieldNameForClass(target.className) }], superDeclarations };
+}
+
+function buildScope(methodName: string, className: string, hierarchy: UsageHierarchy | undefined): UsageScope {
+	const ancestorsDeclaring = hierarchy
+		? hierarchy.ancestorsOf(className).filter(ancestor => hierarchy.methodDeclarations(ancestor, methodName).length > 0)
+		: [];
+	const subclassNames = new Set(hierarchy ? hierarchy.descendantsOf(className) : []);
+	const classNames = new Set([className, ...ancestorsDeclaring, ...subclassNames]);
+	return {
+		classNames,
+		subclassNames,
+		fieldNames: new Set([...classNames].map(grailsFieldNameForClass)),
+		ancestorsDeclaring
+	};
 }
 
 export function uniqueRecords(records: CallSiteRecord[]): CallSiteRecord[] {
@@ -118,13 +155,21 @@ export function uniqueRecords(records: CallSiteRecord[]): CallSiteRecord[] {
 	});
 }
 
-function isScopedCall(record: CallSiteRecord, className: string, fieldName: string): boolean {
+function isScopedCall(record: CallSiteRecord, scope: UsageScope): boolean {
+	const owner = record.ownerClass ?? fileClassName(record.sourcePath);
 	if (record.receiverName === undefined || record.receiverName === 'this') {
-		return fileClassName(record.sourcePath) === className;
+		return scope.classNames.has(owner);
 	}
-	return record.receiverName === fieldName
-		|| record.receiverName === className
-		|| record.receiverType === className;
+	if (record.receiverName === 'super') {
+		return scope.subclassNames.has(owner);
+	}
+	if (record.receiverName === CHAINED_RECEIVER) {
+		return false;
+	}
+	if (record.receiverType) {
+		return scope.classNames.has(record.receiverType);
+	}
+	return scope.fieldNames.has(record.receiverName) || scope.classNames.has(record.receiverName);
 }
 
 function receiverClassName(documentText: string, line: number, receiver: string): string {
@@ -136,7 +181,7 @@ function receiverClassName(documentText: string, line: number, receiver: string)
 }
 
 function owningClassName(documentText: string, sourcePath: string, line: number): string {
-	const classes = parseDocumentSymbols(documentText, sourcePath).classes.filter(cls => cls.line <= line);
+	const classes = parseDocumentSymbols(documentText, sourcePath).classes.filter(cls => cls.line <= line && cls.endLine >= line);
 	const owner = classes[classes.length - 1];
 	return owner ? owner.simpleName : fileClassName(sourcePath);
 }

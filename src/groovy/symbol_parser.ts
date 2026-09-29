@@ -1,5 +1,5 @@
 import { parsePackageName } from './class_parser';
-import { braceDepthAtLineStarts, maskNonCode } from './text_scan_logic';
+import { braceDepthAtLineStarts, closingBraceLine, maskNonCode } from './text_scan_logic';
 
 export interface ParsedMethod {
 	name: string;
@@ -25,6 +25,8 @@ export interface ParsedClassSymbol {
 	kind: 'class' | 'interface' | 'trait' | 'enum';
 	line: number;
 	column: number;
+	endLine: number;
+	bodyDepth: number;
 	extendsTypes: string[];
 	implementsTypes: string[];
 	sourcePath?: string;
@@ -57,17 +59,26 @@ function splitTypeList(raw: string | undefined): string[] {
 	return raw.split(',').map(part => part.trim()).filter(Boolean);
 }
 
-export function parseDocumentSymbols(text: string, sourcePath?: string): ParsedDocumentSymbols {
+export function parseDocumentSymbols(text: string, sourcePath?: string, maskedText = maskNonCode(text)): ParsedDocumentSymbols {
 	const packageName = parsePackageName(text);
 	const lines = text.split('\n');
 	const classes: ParsedClassSymbol[] = [];
 	const methods: ParsedMethod[] = [];
 	const fields: ParsedField[] = [];
-	const depths = braceDepthAtLineStarts(maskNonCode(text));
-	let currentClassFqn = packageName ? `${packageName}.${inferScriptClassName(sourcePath)}` : inferScriptClassName(sourcePath);
+	const depths = braceDepthAtLineStarts(maskedText);
+	const scriptClassFqn = packageName ? `${packageName}.${inferScriptClassName(sourcePath)}` : inferScriptClassName(sourcePath);
+	const openClasses: ParsedClassSymbol[] = [];
+	let currentClassFqn = scriptClassFqn;
+	let lineOffset = 0;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
+		const lineStart = lineOffset;
+		lineOffset += line.length + 1;
+		while (openClasses.length > 0 && openClasses[openClasses.length - 1].endLine < i) {
+			openClasses.pop();
+			currentClassFqn = openClasses[openClasses.length - 1]?.fqn ?? scriptClassFqn;
+		}
 		const trimmed = line.trim();
 		if (!trimmed || trimmed.startsWith('//')) {
 			continue;
@@ -79,17 +90,21 @@ export function parseDocumentSymbols(text: string, sourcePath?: string): ParsedD
 			const simpleName = classMatch[2];
 			const fqn = packageName ? `${packageName}.${simpleName}` : simpleName;
 			const column = line.indexOf(simpleName);
-			classes.push({
+			const symbol: ParsedClassSymbol = {
 				simpleName,
 				fqn,
 				packageName,
 				kind,
 				line: i,
 				column: column >= 0 ? column : 0,
+				endLine: closingBraceLine(maskedText, lineStart + Math.max(column, 0), i) ?? lines.length - 1,
+				bodyDepth: (depths[i] ?? 0) + 1,
 				extendsTypes: splitTypeList(classMatch[3]),
 				implementsTypes: splitTypeList(classMatch[4]),
 				sourcePath
-			});
+			};
+			classes.push(symbol);
+			openClasses.push(symbol);
 			currentClassFqn = fqn;
 			continue;
 		}
@@ -152,6 +167,8 @@ export function parseDocumentSymbols(text: string, sourcePath?: string): ParsedD
 			kind: 'class',
 			line: 0,
 			column: 0,
+			endLine: lines.length - 1,
+			bodyDepth: 0,
 			extendsTypes: [],
 			implementsTypes: [],
 			sourcePath

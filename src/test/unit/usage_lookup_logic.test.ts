@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import { CallSiteIndexStore } from '../../groovy/call_site_index_store';
 import { analyzeSource, excludeDeclarationCallSites } from '../../groovy/call_site_extractor';
 import { parseDocumentSymbols } from '../../groovy/symbol_parser';
+import { TypeHierarchyStore } from '../../groovy/type_hierarchy_store';
 import {
 	findDeclarationTarget,
 	findReferenceTarget,
@@ -23,6 +24,15 @@ function buildIndex(files: Record<string, string>): CallSiteIndexStore {
 	}
 	index.add(excludeDeclarationCallSites(callSites, methods));
 	return index;
+}
+
+function buildHierarchy(files: Record<string, string>): TypeHierarchyStore {
+	const hierarchy = new TypeHierarchyStore();
+	for (const [sourcePath, text] of Object.entries(files)) {
+		const symbols = parseDocumentSymbols(text, sourcePath);
+		hierarchy.add(symbols.classes, symbols.methods);
+	}
+	return hierarchy;
 }
 
 function describe(records: Array<{ sourcePath: string; line: number }>): string[] {
@@ -73,6 +83,21 @@ suite('findDeclarationTarget', () => {
 	test('detects methods declared with modifiers and no return type', () => {
 		assert.strictEqual(findDeclarationTarget(source, WIDGET_SERVICE, 4, 'create')?.kind, 'method');
 		assert.strictEqual(findDeclarationTarget(source, WIDGET_SERVICE, 6, 'helper')?.kind, 'method');
+	});
+
+	test('attributes methods after a nested type to the outer class', () => {
+		const nested = [
+			'class PaymentService {',
+			'    static enum Kind { A, B }',
+			'    def process(Long id) {',
+			'    }',
+			'}'
+		].join('\n');
+		assert.deepStrictEqual(findDeclarationTarget(nested, '/tmp/PaymentService.groovy', 2, 'process'), {
+			kind: 'method',
+			name: 'process',
+			className: 'PaymentService'
+		});
 	});
 
 	test('treats a constructor declaration as its class', () => {
@@ -162,6 +187,23 @@ suite('resolveUsages — methods', () => {
 		assert.deepStrictEqual(resolution.textScans, []);
 	});
 
+	test('decides by the declared type when there is one, even if the variable is named like the class field', () => {
+		const index = buildIndex({
+			'/tmp/Caller.groovy': 'class Caller {\n    def run() {\n        CustomerDTO payment = build()\n        payment.confirm()\n        payment2.confirm()\n    }\n}',
+			'/tmp/Other.groovy': 'class Other {\n    def run() {\n        payment.confirm()\n    }\n}'
+		});
+		const resolution = resolveUsages({ kind: 'method', name: 'confirm', className: 'Payment' }, index, 'navigate');
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/Other.groovy:2']);
+	});
+
+	test('does not count the end of a call chain as a call inside the file class', () => {
+		const index = buildIndex({
+			'/tmp/Customer.groovy': 'class Customer {\n    def run() {\n        Payment.findAll().confirm()\n        confirm()\n    }\n}'
+		});
+		const resolution = resolveUsages({ kind: 'method', name: 'confirm', className: 'Customer' }, index, 'navigate');
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/Customer.groovy:3']);
+	});
+
 	test('asks for a scoped text scan only while the index is not ready', () => {
 		const empty = new CallSiteIndexStore();
 		assert.deepStrictEqual(resolveUsages(target, empty, 'navigate').textScans, [{ receiverFieldName: 'widgetService' }]);
@@ -201,5 +243,82 @@ suite('resolveUsages — classes', () => {
 
 	test('scans the mentioning files for Find All References, to include type references', () => {
 		assert.deepStrictEqual(resolveUsages({ kind: 'class', name: 'Widget' }, index, 'references').textScans, [{ files: ['/tmp/A.groovy'] }]);
+	});
+});
+
+suite('resolveUsages — type hierarchy', () => {
+	const files: Record<string, string> = {
+		'/tmp/CronJob.groovy': [
+			'trait CronJob {',
+			'    public static Boolean isActive() {',
+			'        CronJob jobInstance = this.newInstance()',
+			'        return jobInstance.allowedEnvironments().contains(1)',
+			'    }',
+			'    public void execute() {',
+			'        task()',
+			'    }',
+			'    public abstract void task()',
+			'    public abstract List<String> allowedEnvironments()',
+			'    public abstract List<String> listExecutionExpression()',
+			'}'
+		].join('\n'),
+		'/tmp/ExpiredJob.groovy': [
+			'class ExpiredJob implements CronJob {',
+			'    @Override',
+			'    void task() {',
+			'    }',
+			'    @Override',
+			'    List<String> allowedEnvironments() {',
+			'        return []',
+			'    }',
+			'    @Override',
+			'    List<String> listExecutionExpression() {',
+			'        return []',
+			'    }',
+			'}'
+		].join('\n'),
+		'/tmp/UnrelatedService.groovy': 'class UnrelatedService {\n    void task() {\n    }\n    void run() {\n        task()\n    }\n}',
+		'/tmp/BaseService.groovy': 'class BaseService {\n    void audit(String message) {\n    }\n}',
+		'/tmp/ChildService.groovy': 'class ChildService extends BaseService {\n    void run() {\n        audit("x")\n        super.audit("y")\n    }\n}',
+		'/tmp/Caller.groovy': 'class Caller {\n    def childService\n    def run() {\n        childService.audit("z")\n    }\n}'
+	};
+	const index = buildIndex(files);
+	const hierarchy = buildHierarchy(files);
+
+	test('an overriding method includes calls made through the trait that declares it', () => {
+		const task = resolveUsages({ kind: 'method', name: 'task', className: 'ExpiredJob' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(task.records), ['/tmp/CronJob.groovy:6']);
+		const environments = resolveUsages({ kind: 'method', name: 'allowedEnvironments', className: 'ExpiredJob' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(environments.records), ['/tmp/CronJob.groovy:3']);
+	});
+
+	test('an inherited method includes calls from subclasses, through super and through subclass fields', () => {
+		const resolution = resolveUsages({ kind: 'method', name: 'audit', className: 'BaseService' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/Caller.groovy:3', '/tmp/ChildService.groovy:2', '/tmp/ChildService.groovy:3']);
+	});
+
+	test('falls back to the declaration in the supertype when nothing calls the method', () => {
+		const resolution = resolveUsages({ kind: 'method', name: 'listExecutionExpression', className: 'ExpiredJob' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(resolution.records, []);
+		assert.deepStrictEqual(resolution.superDeclarations, [{ sourcePath: '/tmp/CronJob.groovy', line: 10, column: files['/tmp/CronJob.groovy'].split('\n')[10].indexOf('listExecutionExpression') }]);
+	});
+
+	test('keeps the scope to the class itself without a hierarchy', () => {
+		const resolution = resolveUsages({ kind: 'method', name: 'task', className: 'ExpiredJob' }, index, 'navigate');
+		assert.deepStrictEqual(resolution.records, []);
+		assert.deepStrictEqual(resolution.superDeclarations, []);
+	});
+});
+
+suite('TypeHierarchyStore', () => {
+	test('walks ancestors and descendants transitively and survives cycles', () => {
+		const hierarchy = new TypeHierarchyStore();
+		hierarchy.add([
+			{ simpleName: 'C', extendsTypes: ['B'] },
+			{ simpleName: 'B', extendsTypes: ['A'], implementsTypes: ['Marker'] },
+			{ simpleName: 'A', extendsTypes: ['C'] }
+		], []);
+		assert.deepStrictEqual(hierarchy.ancestorsOf('C').sort(), ['A', 'B', 'Marker']);
+		assert.deepStrictEqual(hierarchy.descendantsOf('Marker').sort(), ['A', 'B', 'C']);
 	});
 });

@@ -4,7 +4,7 @@ import { detectGrailsModules, collectGrailsModuleSourceFiles } from './grails_mo
 import { CallSiteIndexStore } from './call_site_index_store';
 import { CallSiteRecord } from './call_site_extractor';
 import { findWordMatches } from './text_scan_logic';
-import { findDeclarationTarget, findReferenceTarget, resolveUsages } from './usage_lookup_logic';
+import { findDeclarationTarget, findReferenceTarget, resolveUsages, UsageHierarchy } from './usage_lookup_logic';
 
 const SOURCE_EXCLUDE = '**/{node_modules,.git,build,target,out}/**';
 const CONCURRENCY = 64;
@@ -73,7 +73,10 @@ function wordLocation(uri: vscode.Uri, line: number, column: number, word: strin
 }
 
 export class ReferenceProvider implements vscode.ReferenceProvider {
-	constructor(private readonly callSiteIndex: CallSiteIndexStore) {}
+	constructor(
+		private readonly callSiteIndex: CallSiteIndexStore,
+		private readonly hierarchy: UsageHierarchy
+	) {}
 
 	async provideReferences(
 		document: vscode.TextDocument,
@@ -93,7 +96,7 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
 
 		let results: vscode.Location[];
 		if (target) {
-			const resolution = resolveUsages(target, this.callSiteIndex, 'references');
+			const resolution = resolveUsages(target, this.callSiteIndex, 'references', this.hierarchy);
 			results = resolution.records.map(callSiteToLocation);
 			for (const scan of resolution.textScans) {
 				if (target.kind === 'method' && results.length > 0) {
@@ -101,6 +104,10 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
 				}
 				const scanned = await findWordOccurrences(word, scan.receiverFieldName, token, scan.files);
 				results = target.kind === 'class' ? mergeByLine(scanned, results) : scanned;
+			}
+			if (results.length === 0) {
+				results = resolution.superDeclarations.map(declaration =>
+					wordLocation(vscode.Uri.file(declaration.sourcePath), declaration.line, declaration.column, word));
 			}
 		} else {
 			results = findWordMatches(documentText, word)

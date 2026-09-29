@@ -8,7 +8,7 @@ import { resolveGroovyTagLibDefinitions } from '../gsp/groovy_taglib_navigation_
 import { ProjectTagLibTag } from '../gsp/taglib_parser';
 import { findWordOccurrences, callSiteToLocation } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
-import { findDeclarationTarget, resolveUsages } from './usage_lookup_logic';
+import { findDeclarationTarget, resolveUsages, UsageHierarchy } from './usage_lookup_logic';
 import { isInsideComment, isInsideDocLink } from './text_scan_logic';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
@@ -17,6 +17,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		private readonly artifactIndex: GrailsArtifactIndex,
 		private readonly getClasspathJars: () => string[],
 		private readonly callSiteIndex: CallSiteIndexStore,
+		private readonly hierarchy: UsageHierarchy,
 		private readonly getGspTags: () => ProjectTagLibTag[] = () => []
 	) {}
 
@@ -86,7 +87,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			return toLocations(meaningfulTargets);
 		}
 
-		const resolution = resolveUsages(target, this.callSiteIndex, 'navigate');
+		const resolution = resolveUsages(target, this.callSiteIndex, 'navigate', this.hierarchy);
 		let occurrences = resolution.records.map(callSiteToLocation);
 		for (const scan of resolution.textScans) {
 			if (occurrences.length > 0) {
@@ -98,7 +99,11 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		const usages = occurrences.filter(location => !(location.uri.toString() === declUri && location.range.start.line === declLine));
 
 		if (usages.length === 0) {
-			return undefined;
+			return toLocations(resolution.superDeclarations.map(declaration => ({
+				uri: declaration.sourcePath,
+				line: declaration.line,
+				column: declaration.column
+			})));
 		}
 		return usages.length === 1 ? usages[0] : usages;
 	}

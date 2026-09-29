@@ -11,20 +11,41 @@ type MaskFrame =
 	| { kind: 'interpolation'; depth: number };
 
 export function maskNonCode(text: string): string {
-	const out = text.split('');
+	const pieces: string[] = [];
+	let copiedUntil = 0;
+	let blankStart = 0;
+	let blankEnd = 0;
+	const flush = () => {
+		if (blankEnd > blankStart) {
+			pieces.push(text.slice(copiedUntil, blankStart), text.slice(blankStart, blankEnd).replace(/[^\n]/g, ' '));
+			copiedUntil = blankEnd;
+		}
+		blankStart = blankEnd = copiedUntil;
+	};
 	const stack: MaskFrame[] = [];
 	const blank = (from: number, to: number) => {
-		for (let k = from; k < to && k < out.length; k++) {
-			if (out[k] !== '\n') {
-				out[k] = ' ';
-			}
+		const start = Math.max(from, blankEnd, copiedUntil);
+		const end = Math.min(to, text.length);
+		if (start >= end) {
+			return;
 		}
+		if (start !== blankEnd || blankEnd === blankStart) {
+			flush();
+			blankStart = start;
+		}
+		blankEnd = end;
 	};
 
 	let i = 0;
 	while (i < text.length) {
 		const top = stack[stack.length - 1];
 		if (top?.kind === 'string') {
+			const stop = nextIndex(top.interpolates ? DOUBLE_QUOTED_STOP_RE : SINGLE_QUOTED_STOP_RE, text, i);
+			if (stop > i) {
+				blank(i, stop);
+				i = stop;
+				continue;
+			}
 			if (text[i] === '\\') {
 				blank(i, i + 2);
 				i += 2;
@@ -52,6 +73,11 @@ export function maskNonCode(text: string): string {
 			continue;
 		}
 
+		const special = nextIndex(top ? INTERPOLATION_STOP_RE : CODE_STOP_RE, text, i);
+		if (special >= text.length) {
+			break;
+		}
+		i = special;
 		const ch = text[i];
 		const next = text[i + 1];
 		if (ch === '/' && next === '/') {
@@ -90,7 +116,20 @@ export function maskNonCode(text: string): string {
 		}
 		i++;
 	}
-	return out.join('');
+	flush();
+	pieces.push(text.slice(copiedUntil));
+	return pieces.join('');
+}
+
+const CODE_STOP_RE = /[/"']/g;
+const INTERPOLATION_STOP_RE = /[/"'{}]/g;
+const DOUBLE_QUOTED_STOP_RE = /[\\"$\n]/g;
+const SINGLE_QUOTED_STOP_RE = /[\\'\n]/g;
+
+function nextIndex(re: RegExp, text: string, from: number): number {
+	re.lastIndex = from;
+	const match = re.exec(text);
+	return match ? match.index : text.length;
 }
 
 export interface WordMatch {
@@ -137,6 +176,25 @@ export function braceDepthAtLineStarts(maskedText: string): number[] {
 		}
 	}
 	return depths;
+}
+
+export function closingBraceLine(maskedText: string, fromOffset: number, fromLine: number): number | undefined {
+	let line = fromLine;
+	let depth = 0;
+	for (let i = fromOffset; i < maskedText.length; i++) {
+		const ch = maskedText[i];
+		if (ch === '\n') {
+			line++;
+		} else if (ch === '{') {
+			depth++;
+		} else if (ch === '}' && depth > 0) {
+			depth--;
+			if (depth === 0) {
+				return line;
+			}
+		}
+	}
+	return undefined;
 }
 
 export function isInsideComment(text: string, offset: number): boolean {

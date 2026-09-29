@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { extractCallSites, excludeDeclarationCallSites } from '../../groovy/call_site_extractor';
+import { CHAINED_RECEIVER, extractCallSites, excludeDeclarationCallSites, resolveReceiverType } from '../../groovy/call_site_extractor';
 import { ParsedMethod, parseDocumentSymbols } from '../../groovy/symbol_parser';
 
 suite('call_site_extractor', () => {
@@ -125,6 +125,83 @@ suite('call_site_extractor', () => {
 		].join('\n');
 		const saves = extractCallSites(text, '/tmp/Widget.groovy').filter(record => record.methodName === 'save');
 		assert.deepStrictEqual(saves.map(record => record.receiverType), ['Order', 'Widget', 'Widget']);
+	});
+
+	test('limits a declared receiver type to the enclosing method', () => {
+		const text = [
+			'class Caller {',
+			'    def first(Customer entity) {',
+			'        entity.confirm()',
+			'    }',
+			'    def second() {',
+			'        def entity = Payment.get(1)',
+			'        entity.confirm()',
+			'    }',
+			'    def third() {',
+			'        entity.confirm()',
+			'    }',
+			'}'
+		].join('\n');
+		const confirms = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'confirm');
+		assert.deepStrictEqual(confirms.map(record => record.receiverType), ['Customer', 'Payment', undefined]);
+	});
+
+	test('an untyped def or closure parameter hides an earlier typed declaration', () => {
+		const text = [
+			'def run(Customer entity) {',
+			'    def other = build()',
+			'    Customer other2 = null',
+			'    list.each { other2 -> other2.confirm() }',
+			'}'
+		].join('\n');
+		const confirm = extractCallSites(text, '/tmp/Caller.groovy').find(record => record.methodName === 'confirm');
+		assert.strictEqual(confirm?.receiverType, undefined);
+		assert.strictEqual(resolveReceiverType(text, 1, 'other'), undefined);
+	});
+
+	test('uses the type of a class-level field declared after the method', () => {
+		const text = [
+			'class Caller {',
+			'    def run() {',
+			'        gateway.send()',
+			'    }',
+			'    PaymentGateway gateway',
+			'}'
+		].join('\n');
+		assert.strictEqual(extractCallSites(text, '/tmp/Caller.groovy').find(record => record.methodName === 'send')?.receiverType, 'PaymentGateway');
+	});
+
+	test('marks the end of a call chain with an opaque receiver instead of no receiver', () => {
+		const text = [
+			'Payment.findAll().confirm()',
+			'items[0].confirm()',
+			'order.customer.confirm()'
+		].join('\n');
+		const confirms = extractCallSites(text, '/tmp/Customer.groovy').filter(record => record.methodName === 'confirm');
+		assert.deepStrictEqual(confirms.map(record => record.receiverName), [CHAINED_RECEIVER, CHAINED_RECEIVER, 'customer']);
+	});
+
+	test('keeps the receiver of a call continued on the next line', () => {
+		const text = ['paymentService', '    .process(2)', 'paymentService?.', '    process(3)'].join('\n');
+		const records = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'process');
+		assert.deepStrictEqual(records.map(record => `${record.receiverName}@${record.line}`), ['paymentService@1', 'paymentService@3']);
+	});
+
+	test('records the owning class, going back to the outer class after a nested type', () => {
+		const text = [
+			'class PaymentService {',
+			'    static enum Kind { A, B }',
+			'    def process() {',
+			'        helper()',
+			'    }',
+			'    static class Item {',
+			'        def touch() { helper() }',
+			'    }',
+			'    def helper() {}',
+			'}'
+		].join('\n');
+		const helpers = extractCallSites(text, '/tmp/PaymentService.groovy').filter(record => record.methodName === 'helper' && record.line !== 8);
+		assert.deepStrictEqual(helpers.map(record => `${record.ownerClass}@${record.line}`), ['PaymentService@3', 'Item@6']);
 	});
 
 	test('does not index control-flow keywords as calls', () => {
