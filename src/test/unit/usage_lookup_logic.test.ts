@@ -30,7 +30,13 @@ function buildHierarchy(files: Record<string, string>): TypeHierarchyStore {
 	const hierarchy = new TypeHierarchyStore();
 	for (const [sourcePath, text] of Object.entries(files)) {
 		const symbols = parseDocumentSymbols(text, sourcePath);
-		hierarchy.add(symbols.classes, symbols.methods, parseImports(text));
+		hierarchy.add(
+			symbols.classes,
+			symbols.methods,
+			parseImports(text),
+			symbols.fields.filter(field => field.classMember).map(field => ({ classFqn: field.classFqn, name: field.name, typeName: field.typeName })),
+			symbols.enumConstants.map(constant => ({ classFqn: constant.enumFqn, name: constant.name }))
+		);
 	}
 	return hierarchy;
 }
@@ -346,6 +352,38 @@ suite('resolveUsages — homonyms and overrides', () => {
 	test('resolves the other homonym through its import', () => {
 		const resolution = resolveUsages({ kind: 'method', name: 'toMap', className: 'BaseDto', classFqn: 'b.BaseDto' }, index, 'navigate', hierarchy);
 		assert.deepStrictEqual(describe(resolution.records), ['/tmp/a/Caller.groovy:4']);
+	});
+});
+
+suite('resolveUsages — receiver chains', () => {
+	const files: Record<string, string> = {
+		'/tmp/Status.groovy': 'enum Status {\n    PAID, OPEN\n    Boolean isFinished() {\n        true\n    }\n}',
+		'/tmp/Customer.groovy': 'class Customer {\n    Boolean isFinished() {\n        false\n    }\n}',
+		'/tmp/Order.groovy': 'class Order {\n    Status status\n    Customer buyer\n}',
+		'/tmp/SpecialOrder.groovy': 'class SpecialOrder extends Order {\n}',
+		'/tmp/Caller.groovy': [
+			'class Caller {',
+			'    def run(Order order, Customer status, SpecialOrder special) {',
+			'        order.status?.isFinished()',
+			'        Status.PAID.isFinished()',
+			'        order.buyer.isFinished()',
+			'        status.isFinished()',
+			'        special.status.isFinished()',
+			'    }',
+			'}'
+		].join('\n')
+	};
+	const index = buildIndex(files);
+	const hierarchy = buildHierarchy(files);
+
+	test('resolves property chains, enum constants and inherited fields through the index', () => {
+		const resolution = resolveUsages({ kind: 'method', name: 'isFinished', className: 'Status', classFqn: 'Status' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/Caller.groovy:2', '/tmp/Caller.groovy:3', '/tmp/Caller.groovy:6']);
+	});
+
+	test('does not type the end of a chain with a local variable of the same name', () => {
+		const resolution = resolveUsages({ kind: 'method', name: 'isFinished', className: 'Customer', classFqn: 'Customer' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/Caller.groovy:4', '/tmp/Caller.groovy:5']);
 	});
 });
 

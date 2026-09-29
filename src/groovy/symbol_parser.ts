@@ -32,11 +32,28 @@ export interface ParsedClassSymbol {
 	sourcePath?: string;
 }
 
+export interface ParsedEnumConstant {
+	name: string;
+	line: number;
+	column: number;
+	enumFqn: string;
+	argumentCount?: number;
+}
+
+export interface ParsedConstructor {
+	classFqn: string;
+	line: number;
+	column: number;
+	parameterCount?: number;
+}
+
 export interface ParsedDocumentSymbols {
 	packageName: string;
 	classes: ParsedClassSymbol[];
 	methods: ParsedMethod[];
 	fields: ParsedField[];
+	enumConstants: ParsedEnumConstant[];
+	constructors: ParsedConstructor[];
 }
 
 const CLASS_LINE_RE =
@@ -66,6 +83,7 @@ function splitTypeList(raw: string | undefined): string[] {
 export function parseDocumentSymbols(text: string, sourcePath?: string, maskedText = maskNonCode(text)): ParsedDocumentSymbols {
 	const packageName = parsePackageName(text);
 	const lines = maskedText.split('\n');
+	const originalLines = text.split('\n');
 	const classes: ParsedClassSymbol[] = [];
 	const methods: ParsedMethod[] = [];
 	const fields: ParsedField[] = [];
@@ -75,6 +93,9 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 		parenDepths[line] === 0 && depths[line] === (openClasses[openClasses.length - 1]?.bodyDepth ?? 1);
 	const scriptClassFqn = packageName ? `${packageName}.${inferScriptClassName(sourcePath)}` : inferScriptClassName(sourcePath);
 	const openClasses: ParsedClassSymbol[] = [];
+	const enumConstants: ParsedEnumConstant[] = [];
+	const constructors: ParsedConstructor[] = [];
+	let enumReadingConstants: ParsedClassSymbol | undefined;
 	let currentClassFqn = scriptClassFqn;
 	let lineOffset = 0;
 
@@ -113,7 +134,43 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 			classes.push(symbol);
 			openClasses.push(symbol);
 			currentClassFqn = fqn;
+			if (kind === 'enum') {
+				const bodyStart = line.indexOf('{', column);
+				enumReadingConstants = symbol;
+				if (bodyStart >= 0 && readEnumConstants(line, originalLines[i] ?? line, bodyStart + 1, i, symbol, enumConstants)) {
+					enumReadingConstants = undefined;
+				}
+			}
 			continue;
+		}
+
+		const owner = openClasses[openClasses.length - 1];
+		if (owner && depths[i] === owner.bodyDepth && parenDepths[i] === 0) {
+			const constructorColumn = constructorColumnFor(line, owner.simpleName);
+			if (constructorColumn !== undefined) {
+				constructors.push({
+					classFqn: owner.fqn,
+					line: i,
+					column: constructorColumn,
+					parameterCount: argumentCountAt(line, originalLines[i] ?? line, constructorColumn + owner.simpleName.length)
+				});
+			}
+		}
+
+		if (enumReadingConstants) {
+			if (owner !== enumReadingConstants) {
+				enumReadingConstants = undefined;
+			} else if (depths[i] === owner.bodyDepth && parenDepths[i] === 0) {
+				if (METHOD_LINE_RE.test(line) || FIELD_LINE_RE.test(line) || TYPED_FIELD_RE.test(line) || SERVICE_INJECT_RE.test(line)
+					|| constructorColumnFor(line, owner.simpleName) !== undefined) {
+					enumReadingConstants = undefined;
+				} else {
+					if (readEnumConstants(line, originalLines[i] ?? line, 0, i, owner, enumConstants)) {
+						enumReadingConstants = undefined;
+					}
+					continue;
+				}
+			}
 		}
 
 		const methodMatch = line.match(METHOD_LINE_RE);
@@ -182,7 +239,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 		});
 	}
 
-	return { packageName, classes, methods, fields };
+	return { packageName, classes, methods, fields, enumConstants, constructors };
 }
 
 const MAX_HIERARCHY_DEPTH = 12;
@@ -236,6 +293,95 @@ export function serviceNameToClassName(serviceName: string): string {
 	}
 	const prefix = serviceName.slice(0, -'Service'.length);
 	return prefix.charAt(0).toUpperCase() + prefix.slice(1) + 'Service';
+}
+
+function readEnumConstants(
+	line: string,
+	originalLine: string,
+	from: number,
+	lineNo: number,
+	owner: ParsedClassSymbol,
+	constants: ParsedEnumConstant[]
+): boolean {
+	const segment = line.slice(from);
+	const terminator = topLevelIndexOf(segment, ';');
+	const constantsText = terminator >= 0 ? segment.slice(0, terminator) : segment;
+	let offset = 0;
+	for (const part of splitTopLevel(constantsText)) {
+		const match = part.match(/^\s*(?:@[\w.]+(?:\([^)]*\))?\s+)*([A-Za-z_]\w*)\s*(?=\(|\{|\}|$)/);
+		if (match) {
+			const column = from + offset + part.indexOf(match[1]);
+			constants.push({
+				name: match[1],
+				line: lineNo,
+				column,
+				enumFqn: owner.fqn,
+				argumentCount: argumentCountAt(line, originalLine, column + match[1].length)
+			});
+		}
+		offset += part.length + 1;
+	}
+	return terminator >= 0 || segment.includes('}');
+}
+
+function splitTopLevel(text: string): string[] {
+	const parts: string[] = [];
+	let depth = 0;
+	let start = 0;
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (ch === '(' || ch === '{' || ch === '[') {
+			depth++;
+		} else if (ch === ')' || ch === '}' || ch === ']') {
+			depth = Math.max(0, depth - 1);
+		} else if (ch === ',' && depth === 0) {
+			parts.push(text.slice(start, i));
+			start = i + 1;
+		}
+	}
+	parts.push(text.slice(start));
+	return parts;
+}
+
+function topLevelIndexOf(text: string, target: string): number {
+	let depth = 0;
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (ch === '(' || ch === '{' || ch === '[') {
+			depth++;
+		} else if (ch === ')' || ch === '}' || ch === ']') {
+			depth = Math.max(0, depth - 1);
+		} else if (ch === target && depth === 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+function argumentCountAt(maskedLine: string, originalLine: string, afterName: number): number | undefined {
+	const openParen = afterName + (maskedLine.slice(afterName).match(/^\s*/)?.[0].length ?? 0);
+	if (maskedLine[openParen] !== '(') {
+		return 0;
+	}
+	let depth = 0;
+	for (let i = openParen; i < maskedLine.length; i++) {
+		const ch = maskedLine[i];
+		if (ch === '(') {
+			depth++;
+		} else if (ch === ')') {
+			depth--;
+			if (depth === 0) {
+				const inside = originalLine.slice(openParen + 1, i);
+				return inside.trim() ? splitTopLevel(maskedLine.slice(openParen + 1, i)).length : 0;
+			}
+		}
+	}
+	return undefined;
+}
+
+function constructorColumnFor(line: string, className: string): number | undefined {
+	const match = line.match(new RegExp(`^(\\s*(?:(?:public|protected|private)\\s+)?)${className}\\s*\\(`));
+	return match ? match[1].length : undefined;
 }
 
 function inferScriptClassName(sourcePath?: string): string {

@@ -1,5 +1,11 @@
 import { ParsedMethod } from './symbol_parser';
 
+export interface HierarchyMember {
+	classFqn: string;
+	name: string;
+	typeName?: string;
+}
+
 const IMPORT_RE = /^\s*import\s+(?!static\s)([A-Za-z_][\w.]*?)(\.\*)?\s*(?:as\s+\w+\s*)?;?\s*$/gm;
 
 export interface HierarchyType {
@@ -37,9 +43,17 @@ export class TypeHierarchyStore {
 	private readonly parents = new Map<string, string[]>();
 	private readonly children = new Map<string, string[]>();
 	private readonly methodsByClass = new Map<string, ParsedMethod[]>();
+	private readonly fieldTypesByClass = new Map<string, Map<string, string>>();
+	private readonly enumConstantsByClass = new Map<string, Set<string>>();
 	private resolved = true;
 
-	add(types: HierarchyType[], methods: ParsedMethod[], imports: string[] = []): void {
+	add(
+		types: HierarchyType[],
+		methods: ParsedMethod[],
+		imports: string[] = [],
+		fields: HierarchyMember[] = [],
+		enumConstants: HierarchyMember[] = []
+	): void {
 		for (const type of types) {
 			this.pending.push({ type, imports });
 			push(this.fqnsBySimpleName, type.simpleName, type.fqn);
@@ -47,7 +61,26 @@ export class TypeHierarchyStore {
 		for (const method of methods) {
 			push(this.methodsByClass, method.classFqn, method);
 		}
+		for (const field of fields) {
+			if (field.typeName) {
+				const byName = this.fieldTypesByClass.get(field.classFqn) ?? new Map<string, string>();
+				byName.set(field.name, field.typeName);
+				this.fieldTypesByClass.set(field.classFqn, byName);
+			}
+		}
+		for (const constant of enumConstants) {
+			const names = this.enumConstantsByClass.get(constant.classFqn) ?? new Set<string>();
+			names.add(constant.name);
+			this.enumConstantsByClass.set(constant.classFqn, names);
+		}
 		this.resolved = false;
+	}
+
+	memberType(fqn: string, memberName: string): string | undefined {
+		if (this.enumConstantsByClass.get(fqn)?.has(memberName)) {
+			return simpleName(fqn);
+		}
+		return this.fieldTypesByClass.get(fqn)?.get(memberName);
 	}
 
 	clear(): void {
@@ -56,6 +89,8 @@ export class TypeHierarchyStore {
 		this.parents.clear();
 		this.children.clear();
 		this.methodsByClass.clear();
+		this.fieldTypesByClass.clear();
+		this.enumConstantsByClass.clear();
 		this.resolved = true;
 	}
 
@@ -129,4 +164,8 @@ function push<T>(map: Map<string, T[]>, key: string, value: T): void {
 	} else {
 		map.set(key, [value]);
 	}
+}
+
+function simpleName(fqn: string): string {
+	return fqn.includes('.') ? fqn.slice(fqn.lastIndexOf('.') + 1) : fqn;
 }

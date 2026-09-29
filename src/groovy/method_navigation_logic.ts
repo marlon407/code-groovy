@@ -70,9 +70,10 @@ export function findMethodInClassHierarchy(
 	className: string,
 	methodName: string,
 	visited: Set<string> = new Set(),
-	depth = 0
+	depth = 0,
+	referencingContent?: string
 ): MethodLocation[] {
-	return listMethodsInClassHierarchy(readFile, findEntries, className, visited, depth)
+	return listMethodsInClassHierarchy(readFile, findEntries, className, visited, depth, referencingContent)
 		.filter(method => method.name === methodName)
 		.map(method => ({
 			filePath: method.filePath,
@@ -87,7 +88,8 @@ export function listMethodsInClassHierarchy(
 	findEntries: (className: string) => Array<{ filePath: string }>,
 	className: string,
 	visited: Set<string> = new Set(),
-	depth = 0
+	depth = 0,
+	referencingContent?: string
 ): ListedMethod[] {
 	if (!className || visited.has(className) || depth > MAX_HIERARCHY_DEPTH) {
 		return [];
@@ -96,8 +98,9 @@ export function listMethodsInClassHierarchy(
 
 	const byName = new Map<string, ListedMethod>();
 	let parents: string[] = [];
+	let parentsContent: string | undefined;
 
-	for (const entry of findEntries(className)) {
+	for (const entry of preferReferencedEntries(findEntries(className), className, readFile, referencingContent)) {
 		const content = readFile(entry.filePath);
 		if (!content) {
 			continue;
@@ -115,6 +118,7 @@ export function listMethodsInClassHierarchy(
 
 		if (parents.length === 0) {
 			parents = parseTypeDeclaration(content)?.parents ?? [];
+			parentsContent = content;
 		}
 	}
 
@@ -124,7 +128,8 @@ export function listMethodsInClassHierarchy(
 			findEntries,
 			parent,
 			visited,
-			depth + 1
+			depth + 1,
+			parentsContent
 		)) {
 			if (!byName.has(inherited.name)) {
 				byName.set(inherited.name, inherited);
@@ -133,6 +138,33 @@ export function listMethodsInClassHierarchy(
 	}
 
 	return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function preferReferencedEntries<T extends { filePath: string }>(
+	entries: T[],
+	className: string,
+	readFile: (filePath: string) => string | undefined,
+	referencingContent?: string
+): T[] {
+	if (entries.length <= 1 || !referencingContent) {
+		return entries;
+	}
+	const imports = [...referencingContent.matchAll(/^\s*import\s+(?!static\s)([\w.]+?)(\.\*)?\s*;?\s*$/gm)];
+	const explicit = imports.find(match => !match[2] && match[1].endsWith(`.${className}`));
+	const candidatePackages = explicit
+		? [explicit[1].slice(0, -className.length - 1)]
+		: [packageOf(referencingContent), ...imports.filter(match => match[2]).map(match => match[1])];
+	for (const candidate of candidatePackages) {
+		const matching = entries.filter(entry => packageOf(readFile(entry.filePath) ?? '') === candidate);
+		if (matching.length > 0) {
+			return matching;
+		}
+	}
+	return entries;
+}
+
+function packageOf(content: string): string {
+	return content.match(/^\s*package\s+([\w.]+)/m)?.[1] ?? '';
 }
 
 function splitTypeNames(segment?: string): string[] {

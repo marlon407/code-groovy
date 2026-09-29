@@ -7,6 +7,8 @@ export interface CallSiteRecord {
 	methodName: string;
 	receiverName: string | undefined;
 	receiverType?: string;
+	receiverRootType?: string;
+	receiverPath?: string[];
 	ownerClass?: string;
 	sourcePath: string;
 	line: number;
@@ -95,13 +97,18 @@ export function analyzeSource(
 			if (!receiverName && line.charAt(methodStart - 1) === '@') {
 				continue;
 			}
-			const receiverType = receiverName && /^[a-z_]/.test(receiverName) && receiverName !== 'this'
+			const receiverOffset = lineStarts[lineNo] + match.index;
+			const chained = capturedReceiver !== undefined && maskedText[skipWhitespaceBackward(maskedText, receiverOffset - 1)] === '.';
+			const chain = chained ? receiverChain(maskedText, receiverOffset, capturedReceiver) : undefined;
+			const rootType = chain ? chainRootType(chain[0], lineNo, owners, resolveType) : undefined;
+			const receiverType = !chained && receiverName && /^[a-z_]/.test(receiverName) && receiverName !== 'this'
 				? resolveType(receiverName, lineNo)
 				: undefined;
 			callSites.push({
 				methodName: intern(methodName),
 				receiverName: receiverName === undefined ? undefined : intern(receiverName),
 				...(receiverType ? { receiverType: intern(receiverType) } : {}),
+				...(chain && rootType ? { receiverRootType: intern(rootType), receiverPath: chain.slice(1).map(intern) } : {}),
 				...(ownerClass ? { ownerClass: intern(ownerClass) } : {}),
 				sourcePath,
 				line: lineNo,
@@ -171,6 +178,44 @@ export function receiverBefore(maskedText: string, offset: number): string | und
 		return CHAINED_RECEIVER;
 	}
 	return identifier;
+}
+
+function receiverChain(maskedText: string, receiverOffset: number, receiver: string): string[] | undefined {
+	const segments = [receiver];
+	let i = skipWhitespaceBackward(maskedText, receiverOffset - 1);
+	while (maskedText[i] === '.') {
+		i--;
+		if (maskedText[i] === '?' || maskedText[i] === '*') {
+			i--;
+		}
+		i = skipWhitespaceBackward(maskedText, i);
+		const end = i + 1;
+		while (i >= 0 && /\w/.test(maskedText[i])) {
+			i--;
+		}
+		const identifier = maskedText.slice(i + 1, end);
+		if (!/^[A-Za-z_]\w*$/.test(identifier)) {
+			return undefined;
+		}
+		segments.unshift(identifier);
+		i = skipWhitespaceBackward(maskedText, i);
+	}
+	return segments.length > 1 ? segments : undefined;
+}
+
+function chainRootType(
+	root: string,
+	line: number,
+	owners: Array<ParsedClassSymbol | undefined>,
+	resolveType: ReceiverTypeResolver
+): string | undefined {
+	if (root === 'this') {
+		return owners[line]?.simpleName;
+	}
+	if (/^[A-Z]/.test(root)) {
+		return root;
+	}
+	return resolveType(root, line);
 }
 
 function skipWhitespaceBackward(text: string, index: number): number {

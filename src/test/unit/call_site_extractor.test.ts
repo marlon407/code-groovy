@@ -245,6 +245,26 @@ suite('call_site_extractor', () => {
 		assert.deepStrictEqual(helpers.map(record => `${record.ownerClass}@${record.line}`), ['PaymentService@3', 'Item@6']);
 	});
 
+	test('records the root type and path of a receiver chain instead of typing its last segment', () => {
+		const text = [
+			'class Caller {',
+			'    def run(Order order, Customer status) {',
+			'        order.status?.isFinished()',
+			'        Status.PAID.isFinished()',
+			'        this.order.buyer.isFinished()',
+			'        foo().status.isFinished()',
+			'    }',
+			'}'
+		].join('\n');
+		const records = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'isFinished');
+		assert.deepStrictEqual(records.map(record => [record.receiverRootType, record.receiverPath, record.receiverType]), [
+			['Order', ['status'], undefined],
+			['Status', ['PAID'], undefined],
+			['Caller', ['order', 'buyer'], undefined],
+			[undefined, undefined, undefined]
+		]);
+	});
+
 	test('does not index control-flow keywords as calls', () => {
 		const cases = ['if (x) {', 'for (item in list) {', 'while (running) {', 'switch (kind) {', '} catch (Exception e) {', 'return (a + b)'];
 		for (const text of cases) {
@@ -340,5 +360,28 @@ suite('parseDocumentSymbols — masked source', () => {
 		assert.deepStrictEqual(symbols.methods.map(method => `${method.name}@${method.classFqn}`), ['close@Report']);
 		assert.deepStrictEqual(symbols.classes[0].extendsTypes, ['com.acme.BaseReport']);
 		assert.deepStrictEqual(symbols.classes[0].implementsTypes, ['Serializable', 'java.io.Closeable']);
+	});
+});
+
+suite('parseDocumentSymbols — enums', () => {
+	test('reads annotated constants, constants on the enum line and constants with bodies', () => {
+		const text = [
+			'enum Status {',
+			'    @Deprecated PENDING,',
+			'    @Deprecated',
+			'    CREDITED(1, "a,b"),',
+			'    REFUNDED {',
+			'        String label() { "x" }',
+			'    }',
+			'    Status() {}',
+			'    Status(Integer code, String name) {}',
+			'}',
+			'enum Kind { A, B }'
+		].join('\n');
+		const symbols = parseDocumentSymbols(text, '/tmp/Status.groovy');
+		assert.deepStrictEqual(symbols.enumConstants.map(constant => `${constant.name}@${constant.line}:${constant.argumentCount}`), [
+			'PENDING@1:0', 'CREDITED@3:2', 'REFUNDED@4:0', 'A@10:0', 'B@10:0'
+		]);
+		assert.deepStrictEqual(symbols.constructors.map(constructor => `${constructor.line}:${constructor.parameterCount}`), ['7:0', '8:2']);
 	});
 });

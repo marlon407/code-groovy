@@ -20,6 +20,7 @@ export interface UsageHierarchy {
 	parentsOf(fqn: string): string[];
 	childrenOf(fqn: string): string[];
 	methodDeclarations(fqn: string, methodName: string): MethodDeclaration[];
+	memberType?(fqn: string, memberName: string): string | undefined;
 }
 
 interface UsageScope {
@@ -27,6 +28,7 @@ interface UsageScope {
 	superCallerNames: Set<string>;
 	fieldNames: Set<string>;
 	ancestorsDeclaring: string[];
+	resolveChain?: (rootType: string, path: string[]) => string | undefined;
 }
 
 const MAX_HIERARCHY_DEPTH = 12;
@@ -169,7 +171,29 @@ function buildScope(target: { name: string; className: string; classFqn?: string
 		classNames,
 		superCallerNames,
 		fieldNames: new Set([...classNames].map(grailsFieldNameForClass)),
-		ancestorsDeclaring
+		ancestorsDeclaring,
+		resolveChain: hierarchy?.memberType ? chainResolver(hierarchy) : undefined
+	};
+}
+
+function chainResolver(hierarchy: UsageHierarchy): (rootType: string, path: string[]) => string | undefined {
+	const cache = new Map<string, string | undefined>();
+	const memberTypeOf = (typeName: string, memberName: string): string | undefined => {
+		const key = `${typeName}#${memberName}`;
+		if (!cache.has(key)) {
+			const roots = hierarchy.resolveClass(typeName);
+			const candidates = [...roots, ...walkHierarchy(roots, fqn => hierarchy.parentsOf(fqn))];
+			const found = candidates.map(fqn => hierarchy.memberType?.(fqn, memberName)).find(Boolean);
+			cache.set(key, found ? simpleName(found) : undefined);
+		}
+		return cache.get(key);
+	};
+	return (rootType, path) => {
+		let typeName: string | undefined = rootType;
+		for (const segment of path) {
+			typeName = typeName ? memberTypeOf(typeName, segment) : undefined;
+		}
+		return typeName;
 	};
 }
 
@@ -213,6 +237,12 @@ function isScopedCall(record: CallSiteRecord, scope: UsageScope): boolean {
 	}
 	if (record.receiverName === CHAINED_RECEIVER) {
 		return false;
+	}
+	if (record.receiverRootType && record.receiverPath && scope.resolveChain) {
+		const chainType = scope.resolveChain(record.receiverRootType, record.receiverPath);
+		if (chainType) {
+			return scope.classNames.has(chainType);
+		}
 	}
 	if (record.receiverType) {
 		return scope.classNames.has(record.receiverType);

@@ -5,7 +5,7 @@ import { ClassIndexStore } from '../../groovy/class_index_store';
 import { resolveDefinitions } from '../../groovy/definition_resolver';
 import { GrailsArtifactIndex, indexGroovyFile } from '../../groovy/grails_artifact_index';
 import { candidateClassNamesForReceiver, serviceBeanToClassName } from '../../groovy/service_bean';
-import { findMethodInText, parseTypeDeclaration } from '../../groovy/method_navigation_logic';
+import { findMethodInClassHierarchy, findMethodInText, parseTypeDeclaration } from '../../groovy/method_navigation_logic';
 import { buildImportMap, resolveSimpleTypeName } from '../../groovy/type_resolver';
 import { indexWorkspaceDocument } from '../../groovy/workspace_symbol_index';
 
@@ -15,7 +15,10 @@ const FIXTURE_FILES = [
 	'ModelEntity.groovy',
 	'Widget.groovy',
 	'WidgetService.groovy',
-	'WidgetController.groovy'
+	'WidgetController.groovy',
+	'WidgetKind.groovy',
+	'WidgetState.groovy',
+	'WidgetBox.groovy'
 ];
 
 function loadFixture(name: string): string {
@@ -282,5 +285,127 @@ suite('type_resolver', () => {
 		const importMap = buildImportMap(loadFixture('WidgetController.groovy'));
 		const fqns = resolveSimpleTypeName('Widget', importMap, classStore);
 		assert.ok(fqns.includes('com.example.fixture.domain.Widget'));
+	});
+});
+
+suite('findMethodInClassHierarchy — same-named supertypes', () => {
+	const sources: Record<string, string> = {
+		'/w/debit/BaseRequestBuilder.groovy': 'package adyen.debit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n}',
+		'/w/credit/BaseRequestBuilder.groovy': 'package adyen.credit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n}',
+		'/w/debit/AuthoriseRequestBuilder.groovy': 'package adyen.debit\nclass AuthoriseRequestBuilder extends BaseRequestBuilder {\n}',
+		'/w/other/PixRequestBuilder.groovy': 'package other\nimport adyen.debit.BaseRequestBuilder\nclass PixRequestBuilder extends BaseRequestBuilder {\n}'
+	};
+	const readFile = (filePath: string) => sources[filePath];
+	const findEntries = (className: string) => Object.keys(sources)
+		.filter(filePath => filePath.endsWith(`/${className}.groovy`))
+		.sort((a, b) => a.includes('credit') ? -1 : b.includes('credit') ? 1 : 0)
+		.map(filePath => ({ filePath }));
+	const lookup = (className: string, referencing?: string) =>
+		findMethodInClassHierarchy(readFile, findEntries, className, 'buildAmount', new Set(), 0, referencing).map(location => location.filePath);
+
+	test('picks the supertype in the same package as the subclass', () => {
+		assert.deepStrictEqual(lookup('AuthoriseRequestBuilder'), ['/w/debit/BaseRequestBuilder.groovy']);
+	});
+
+	test('picks the supertype named by an explicit import', () => {
+		assert.deepStrictEqual(lookup('PixRequestBuilder'), ['/w/debit/BaseRequestBuilder.groovy']);
+	});
+
+	test('picks the class the referencing file refers to when the name itself is ambiguous', () => {
+		assert.deepStrictEqual(lookup('BaseRequestBuilder', 'package adyen.debit\nclass X {\n}'), ['/w/debit/BaseRequestBuilder.groovy']);
+	});
+});
+
+suite('enum constants and static fields', () => {
+	const kindPath = path.join(fixturesRoot, 'WidgetKind.groovy');
+	const kindSource = loadFixture('WidgetKind.groovy');
+	const kindLines = kindSource.split('\n');
+	const lineOf = (lines: string[], pattern: RegExp) => lines.findIndex(text => pattern.test(text));
+	const callerSource = [
+		'package com.example.fixture.web',
+		'import com.example.fixture.domain.WidgetKind',
+		'import com.example.fixture.domain.WidgetState',
+		'class KindController {',
+		'    def show() {',
+		'        render(WidgetKind.DETAILED)',
+		'        render(WidgetState.INACTIVE)',
+		'        render(WidgetState.MAX_NAME_LENGTH)',
+		'    }',
+		'}'
+	].join('\n');
+	const callerPath = path.join(fixturesRoot, 'KindController.groovy');
+	const at = (source: string, sourcePath: string, line: number, word: string) =>
+		buildContext(source, sourcePath, line, word, source.split('\n')[line].indexOf(word));
+
+	test('goes from Type.CONSTANT to the constant inside the enum', () => {
+		const targets = at(callerSource, callerPath, 5, 'DETAILED');
+		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line]), [['WidgetKind.groovy', lineOf(kindLines, /^\s*DETAILED\(/)]]);
+	});
+
+	test('goes to a constant declared on the same line as others', () => {
+		const stateLines = loadFixture('WidgetState.groovy').split('\n');
+		const targets = at(callerSource, callerPath, 6, 'INACTIVE');
+		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line, target.column]), [['WidgetState.groovy', 3, stateLines[3].indexOf('INACTIVE')]]);
+	});
+
+	test('goes from Type.STATIC_FIELD to the static field', () => {
+		const stateLines = loadFixture('WidgetState.groovy').split('\n');
+		const targets = at(callerSource, callerPath, 7, 'MAX_NAME_LENGTH');
+		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line]), [['WidgetState.groovy', lineOf(stateLines, /MAX_NAME_LENGTH/)]]);
+	});
+
+	test('goes from a constant declaration to the constructor with the same number of arguments', () => {
+		const simple = at(kindSource, kindPath, lineOf(kindLines, /^\s*SIMPLE\(/), 'SIMPLE');
+		const detailed = at(kindSource, kindPath, lineOf(kindLines, /^\s*DETAILED\(/), 'DETAILED');
+		const legacy = at(kindSource, kindPath, lineOf(kindLines, /^\s*LEGACY/), 'LEGACY');
+		assert.deepStrictEqual(simple.map(target => target.line), [lineOf(kindLines, /WidgetKind\(String code\) \{/)]);
+		assert.deepStrictEqual(detailed.map(target => target.line), [lineOf(kindLines, /WidgetKind\(String code, Boolean verbose\)/)]);
+		assert.deepStrictEqual(legacy.map(target => target.line), [lineOf(kindLines, /WidgetKind\(\) \{/)]);
+	});
+
+	test('goes from a constant declaration to the enum itself when it has no constructor', () => {
+		const statePath = path.join(fixturesRoot, 'WidgetState.groovy');
+		const stateSource = loadFixture('WidgetState.groovy');
+		const targets = at(stateSource, statePath, 3, 'ACTIVE');
+		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line]), [['WidgetState.groovy', 2]]);
+	});
+});
+
+suite('receiver chains', () => {
+	const source = [
+		'package com.example.fixture.web',
+		'import com.example.fixture.domain.WidgetBox',
+		'class BoxController {',
+		'    def show(WidgetBox box) {',
+		'        if (box.kind?.isSimple()) {',
+		'            box.mainWidget.rename("x")',
+		'            println box?.mainWidget.name',
+		'        }',
+		'    }',
+		'}'
+	].join('\n');
+	const sourcePath = path.join(fixturesRoot, 'BoxController.groovy');
+	const lines = source.split('\n');
+	const at = (line: number, word: string) => buildContext(source, sourcePath, line, word, lines[line].indexOf(word));
+
+	test('resolves a method through a property chain and safe navigation', () => {
+		const targets = at(4, 'isSimple');
+		assert.deepStrictEqual(targets.map(target => path.basename(target.uri)), ['WidgetKind.groovy']);
+	});
+
+	test('resolves a method on a property typed with another class', () => {
+		assert.deepStrictEqual(at(5, 'rename').map(target => path.basename(target.uri)), ['Widget.groovy']);
+	});
+
+	test('resolves a field through a parameter whose name differs from its type', () => {
+		const boxLines = loadFixture('WidgetBox.groovy').split('\n');
+		const targets = at(4, 'kind');
+		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line]), [['WidgetBox.groovy', boxLines.findIndex(text => /WidgetKind kind/.test(text))]]);
+	});
+
+	test('resolves a field at the end of a property chain', () => {
+		const widgetLines = loadFixture('Widget.groovy').split('\n');
+		const targets = at(6, 'name');
+		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line]), [['Widget.groovy', widgetLines.findIndex(text => /^\s*String\s+name\b/.test(text))]]);
 	});
 });
