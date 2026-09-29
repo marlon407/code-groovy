@@ -3,6 +3,8 @@ import { CallSiteRecord } from './call_site_extractor';
 export class CallSiteIndexStore {
 	private readonly byMethodName = new Map<string, CallSiteRecord[]>();
 	private readonly byReceiverName = new Map<string, CallSiteRecord[]>();
+	private readonly filesByTypeMention = new Map<string, number[]>();
+	private readonly filePaths: string[] = [];
 	private ready = false;
 
 	add(records: CallSiteRecord[]): void {
@@ -20,9 +22,20 @@ export class CallSiteIndexStore {
 		this.ready = true;
 	}
 
+	addTypeMentions(sourcePath: string, typeNames: string[]): void {
+		const fileId = this.filePaths.push(sourcePath) - 1;
+		for (const typeName of typeNames) {
+			const files = this.filesByTypeMention.get(typeName) ?? [];
+			files.push(fileId);
+			this.filesByTypeMention.set(typeName, files);
+		}
+	}
+
 	clear(): void {
 		this.byMethodName.clear();
 		this.byReceiverName.clear();
+		this.filesByTypeMention.clear();
+		this.filePaths.length = 0;
 	}
 
 	lookup(methodName: string, receiverName?: string): CallSiteRecord[] {
@@ -35,6 +48,10 @@ export class CallSiteIndexStore {
 
 	lookupByReceiver(receiverName: string): CallSiteRecord[] {
 		return this.byReceiverName.get(receiverName) ?? [];
+	}
+
+	filesMentioning(typeName: string): string[] {
+		return (this.filesByTypeMention.get(typeName) ?? []).map(fileId => this.filePaths[fileId]);
 	}
 
 	isReady(): boolean {

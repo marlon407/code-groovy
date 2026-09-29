@@ -92,6 +92,41 @@ suite('call_site_extractor', () => {
 		assert.strictEqual(records[0].receiverName, 'widgets');
 	});
 
+	test('does not index calls inside comments or Groovydoc', () => {
+		const text = [
+			'// widgetService.activate(w)',
+			'/* widgetService.activate(w) */',
+			'/**',
+			' * Calls widgetService.activate(w)',
+			' */'
+		].join('\n');
+		assert.deepStrictEqual(extractCallSites(text, '/tmp/Widget.groovy'), []);
+	});
+
+	test('indexes calls inside GString interpolation and after strings with apostrophes', () => {
+		const text = [
+			'log.info "total: ${widgetService.activate(w)}"',
+			`"don't" + widgetService.activate(w)`
+		].join('\n');
+		const records = extractCallSites(text, '/tmp/Widget.groovy').filter(record => record.methodName === 'activate');
+		assert.deepStrictEqual(records.map(record => `${record.receiverName}@${record.line}`), ['widgetService@0', 'widgetService@1']);
+	});
+
+	test('records the declared type of a typed receiver, using the nearest declaration', () => {
+		const text = [
+			'def first(Order item) {',
+			'    item.save()',
+			'}',
+			'def second(Widget item) {',
+			'    item.save()',
+			'    def other = new Widget()',
+			'    other.save()',
+			'}'
+		].join('\n');
+		const saves = extractCallSites(text, '/tmp/Widget.groovy').filter(record => record.methodName === 'save');
+		assert.deepStrictEqual(saves.map(record => record.receiverType), ['Order', 'Widget', 'Widget']);
+	});
+
 	test('does not index control-flow keywords as calls', () => {
 		const cases = ['if (x) {', 'for (item in list) {', 'while (running) {', 'switch (kind) {', '} catch (Exception e) {', 'return (a + b)'];
 		for (const text of cases) {

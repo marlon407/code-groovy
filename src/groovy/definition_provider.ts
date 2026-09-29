@@ -67,29 +67,23 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		}
 
 		const word = document.getText(wordRange);
-		const targets = resolveDefinitions({
-			documentText: document.getText(),
-			line: position.line,
-			character: position.character,
-			word,
-			wordStart: wordRange.start.character,
-			sourcePath: document.uri.fsPath,
-			workspaceRoot,
-			classpathJars: this.getClasspathJars(),
-			classStore: this.classStore,
-			artifactIndex: this.artifactIndex
-		});
-
 		const declLine = wordRange.start.line;
-		const meaningfulTargets = targets.filter(target => !(target.uri === document.uri.fsPath && target.line === declLine));
-
-		if (meaningfulTargets.length > 0) {
-			return toLocations(meaningfulTargets);
-		}
-
 		const target = findDeclarationTarget(document.getText(), document.uri.fsPath, declLine, word);
 		if (!target) {
-			return undefined;
+			const targets = resolveDefinitions({
+				documentText: document.getText(),
+				line: position.line,
+				character: position.character,
+				word,
+				wordStart: wordRange.start.character,
+				sourcePath: document.uri.fsPath,
+				workspaceRoot,
+				classpathJars: this.getClasspathJars(),
+				classStore: this.classStore,
+				artifactIndex: this.artifactIndex
+			});
+			const meaningfulTargets = targets.filter(candidate => !(candidate.uri === document.uri.fsPath && candidate.line === declLine));
+			return toLocations(meaningfulTargets);
 		}
 
 		const resolution = resolveUsages(target, this.callSiteIndex, 'navigate');
@@ -98,7 +92,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			if (occurrences.length > 0) {
 				break;
 			}
-			occurrences = await findWordOccurrences(word, scan.receiverFieldName, token);
+			occurrences = await findWordOccurrences(word, scan.receiverFieldName, token, scan.files);
 		}
 		const declUri = document.uri.toString();
 		const usages = occurrences.filter(location => !(location.uri.toString() === declUri && location.range.start.line === declLine));

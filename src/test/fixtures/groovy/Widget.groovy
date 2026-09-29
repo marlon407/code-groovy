@@ -14,4 +14,9 @@ class Widget extends ModelEntity {
     String ownName() {
         return this.name
     }
+
+    String describe() {
+        String label = name
+        return label
+    }
 }

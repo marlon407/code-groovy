@@ -5,7 +5,7 @@ import { detectGrailsModules, collectGrailsModuleSourceFiles } from './grails_mo
 import { DefinitionProvider } from './definition_provider';
 import { ReferenceProvider } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
-import { extractCallSites, excludeDeclarationCallSites, CallSiteRecord } from './call_site_extractor';
+import { analyzeSource, excludeDeclarationCallSites, CallSiteRecord } from './call_site_extractor';
 import { GrailsArtifactIndex, indexGroovyFile } from './grails_artifact_index';
 import { ImportCodeActionProvider } from './import_code_action_provider';
 import { ImportCompletionProvider } from './import_completion_provider';
@@ -235,6 +235,7 @@ export class ClassIndex implements vscode.Disposable {
 		const types: IndexedType[] = [];
 		const methods: ReturnType<typeof indexWorkspaceDocument>['methods'] = [];
 		const callSites: CallSiteRecord[] = [];
+		const typeMentions: Array<{ sourcePath: string; typeNames: string[] }> = [];
 		this.artifactIndex.clear();
 		for (let index = 0; index < filePaths.length; index++) {
 			const filePath = filePaths[index];
@@ -244,7 +245,11 @@ export class ClassIndex implements vscode.Disposable {
 				const indexed = indexWorkspaceDocument(text, filePath);
 				types.push(...indexed.types);
 				methods.push(...indexed.methods);
-				callSites.push(...extractCallSites(text, filePath));
+				const analysis = analyzeSource(text, filePath);
+				for (const callSite of analysis.callSites) {
+					callSites.push(callSite);
+				}
+				typeMentions.push({ sourcePath: filePath, typeNames: analysis.typeMentions });
 				if (filePath.endsWith('.groovy')) {
 					this.artifactIndex.addEntry(indexGroovyFile(filePath));
 				}
@@ -260,6 +265,9 @@ export class ClassIndex implements vscode.Disposable {
 		this.callSiteIndex.clear();
 		this.store.add(types);
 		this.methodStore.add(methods);
+		for (const mention of typeMentions) {
+			this.callSiteIndex.addTypeMentions(mention.sourcePath, mention.typeNames);
+		}
 		this.callSiteIndex.add(excludeDeclarationCallSites(callSites, methods));
 
 		if (!showProgress && this.initialIndexComplete) {

@@ -4,15 +4,15 @@ All notable changes to the "code-groovy" extension will be documented in this fi
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
-- Jump from a method or class declaration to where it's used (Go to Definition — Ctrl+Click, Cmd+Click on macOS) when there's nothing else to navigate to, mirroring IntelliJ's "Go to Declaration or Usages"
-- Support Find All References for Groovy (`Shift+F12`) on methods and classes, using the same lookup as Go to Definition, backed by an in-memory call-site index built during the existing indexing pass — no full workspace re-scan per request
-- Scope usage search by the Grails-convention receiver field name (field name = class name in camelCase), plus calls from inside the declaring class, to avoid false positives across same-named methods in unrelated classes
-- Detect Groovy's paren-less closure call syntax (`receiver.method { ... }`, e.g. GORM's `.where`, `.each`, `.findAll`) and safe-navigation/spread calls (`receiver?.method()`, `list*.method()`) as usages, not just `receiver.method(...)`
+- Jump from a method or class declaration to where it's used (Go to Definition — Ctrl+Click, Cmd+Click on macOS), mirroring IntelliJ's "Go to Declaration or Usages", including overloaded methods and constructors
+- Support Find All References for Groovy (`Shift+F12`) on methods and classes, using the same lookup as Go to Definition, backed by an in-memory call-site index and a per-class file index built during the existing indexing pass — a request only reads the files that mention the class, never the whole workspace
+- Scope usage search to calls on the declaring class — through its Grails field name (field name = class name in camelCase), the class itself (static calls), variables and parameters typed with it, or from inside the class — and show nothing rather than unrelated same-named calls from other classes
+- Detect Groovy's paren-less closure call syntax (`receiver.method { ... }`, e.g. GORM's `.where`, `.each`, `.findAll`), safe-navigation/spread calls (`receiver?.method()`, `list*.method()`) and calls inside GString interpolation (`"${service.call()}"`) as usages, while ignoring calls that only appear in comments
 - Find usages of a class/domain type too (constructor calls and static/closure calls on it), not just methods
-- Fall back to a workspace text scan when Go to Definition (Ctrl+Click / Cmd+Click) on a class declaration finds nothing in the call-site index, since a class is commonly referenced only as a type (typed field/parameter), which the index alone does not capture; the scan skips `import` lines and `//` comments
+- Also count a class referenced only as a type (typed field/parameter) as used, scanning only the files that mention it and skipping `import` lines, comments and string contents
 - Recognize untyped Grails service injection (`def someService`) as a usage of the service class, for both Go to Definition (Ctrl+Click / Cmd+Click) and Find All References, by matching the Grails field-name convention (field name = class name in camelCase, kept as-is when it starts with an acronym like `URLService`) even when the class name itself never appears as literal text
-- Recognize method declarations with generic or array return types and same-line annotations (`Map<String, Object> build(...)`, `String[] names()`, `@Transactional def save()`), and stop treating `return foo(...)` as a declaration
-- Add Go to Definition (Ctrl+Click / Cmd+Click) for field and property access (`receiver.field`, including `this.field`), resolving the receiver's declared type from the enclosing document before falling back to the Grails naming convention
+- Recognize method declarations with generic or array return types, same-line annotations or only modifiers (`Map<String, Object> build(...)`, `String[] names()`, `@Transactional def save()`, `static create(...)`), and stop treating `return foo(...)` as a declaration
+- Add Go to Definition (Ctrl+Click / Cmd+Click) for field and property access (`receiver.field`, including `this.field`), resolving the receiver's declared type from the enclosing document before falling back to the Grails naming convention, and matching only class-level fields and properties (not local variables of the target class)
 - Do not offer Go to Definition (Ctrl+Click / Cmd+Click) on words inside `//` and `/* */` comments, except `{@link ...}` references in Groovydoc
 
 ## [0.2.3] - 2026-09-28

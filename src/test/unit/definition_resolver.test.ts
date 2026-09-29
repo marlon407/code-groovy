@@ -167,6 +167,20 @@ suite('definition_resolver', () => {
 		assert.ok(targets.some(target => target.uri.endsWith('Widget.groovy') && target.line === fieldLine));
 	});
 
+	test('does not resolve receiver.field to a local variable of a method in the target class', () => {
+		const controllerSource = loadFixture('WidgetController.groovy');
+		const lines = controllerSource.split('\n');
+		const line = lines.findIndex(text => text.includes('widget.label'));
+		const targets = buildContext(
+			controllerSource,
+			path.join(fixturesRoot, 'WidgetController.groovy'),
+			line,
+			'label',
+			lines[line].lastIndexOf('label')
+		);
+		assert.deepStrictEqual(targets, []);
+	});
+
 	test('uses the nearest preceding declaration when a variable name is reused with another type', () => {
 		const source = [
 			'package com.example.fixture.web',

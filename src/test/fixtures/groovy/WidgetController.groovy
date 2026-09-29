@@ -14,4 +14,8 @@ class WidgetController {
     String widgetName(Widget widget) {
         return widget.name
     }
+
+    String widgetLabel(Widget widget) {
+        return widget.label
+    }
 }

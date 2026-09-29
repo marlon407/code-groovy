@@ -1,5 +1,12 @@
 import * as assert from 'assert';
-import { isImportLine, isInsideComment, isInsideDocLink, isInsideLineComment } from '../../groovy/text_scan_logic';
+import {
+	braceDepthAtLineStarts,
+	findWordMatches,
+	isImportLine,
+	isInsideComment,
+	isInsideDocLink,
+	maskNonCode
+} from '../../groovy/text_scan_logic';
 
 function offsetOf(text: string, needle: string, occurrence = 0): number {
 	let index = -1;
@@ -69,28 +76,66 @@ suite('isImportLine', () => {
 	});
 });
 
-suite('isInsideLineComment', () => {
-	test('flags text after a real // comment marker', () => {
-		const line = '// AnticipationPartnerSettlementItemPixTransaction is unused now';
-		const index = line.indexOf('AnticipationPartnerSettlementItemPixTransaction');
-		assert.strictEqual(isInsideLineComment(line, index), true);
+suite('maskNonCode', () => {
+	test('blanks comments and string contents while keeping offsets and newlines', () => {
+		const text = 'a("x") // c\n/* b */ d';
+		const masked = maskNonCode(text);
+		assert.strictEqual(masked.length, text.length);
+		assert.strictEqual(masked, 'a(   )     \n        d');
 	});
 
-	test('does not flag real code before a trailing comment', () => {
-		const line = 'AnticipationPartnerSettlementItemPixTransaction.where { } // legacy filter';
-		const index = line.indexOf('AnticipationPartnerSettlementItemPixTransaction');
-		assert.strictEqual(isInsideLineComment(line, index), false);
+	test('keeps code inside GString interpolation', () => {
+		const masked = maskNonCode('log.info "total: ${widgetService.activate(w)} done"');
+		assert.ok(masked.includes('widgetService.activate(w)'));
+		assert.ok(!masked.includes('total'));
+		assert.ok(!masked.includes('done'));
 	});
 
-	test('does not treat // inside a string literal as a comment marker', () => {
-		const line = 'String url = "http://example.com/AnticipationPartnerSettlementItemPixTransaction"';
-		const index = line.lastIndexOf('AnticipationPartnerSettlementItemPixTransaction');
-		assert.strictEqual(isInsideLineComment(line, index), false);
+	test('handles apostrophes and escaped quotes inside strings', () => {
+		const masked = maskNonCode(`"don't" + widgetService.activate(w) + 'a\\'' + other.run()`);
+		assert.ok(masked.includes('widgetService.activate(w)'));
+		assert.ok(masked.includes('other.run()'));
+	});
+});
+
+suite('braceDepthAtLineStarts', () => {
+	test('reports the brace depth at the start of each line', () => {
+		const text = 'class A {\n    String name\n    def run() {\n        String local\n    }\n}';
+		assert.deepStrictEqual(braceDepthAtLineStarts(maskNonCode(text)), [0, 1, 1, 2, 2, 1]);
 	});
 
-	test('returns false for a line with no comment at all', () => {
-		const line = 'AnticipationPartnerSettlementItemPixTransaction.where { }';
-		const index = line.indexOf('AnticipationPartnerSettlementItemPixTransaction');
-		assert.strictEqual(isInsideLineComment(line, index), false);
+	test('ignores braces inside strings and comments', () => {
+		const text = 'class A {\n    String s = "{" // }\n    String t\n}';
+		assert.deepStrictEqual(braceDepthAtLineStarts(maskNonCode(text)), [0, 1, 1, 1]);
+	});
+});
+
+suite('findWordMatches', () => {
+	const word = 'AnticipationPartnerSettlementItemPixTransaction';
+
+	test('skips a word inside a // comment', () => {
+		assert.deepStrictEqual(findWordMatches(`// ${word} is unused now`, word), []);
+	});
+
+	test('finds real code before a trailing comment, but not the comment part', () => {
+		assert.deepStrictEqual(findWordMatches(`${word}.where { } // ${word} legacy filter`, word), [{ line: 0, column: 0 }]);
+	});
+
+	test('skips a word inside a string literal, including after //', () => {
+		assert.deepStrictEqual(findWordMatches(`String url = "http://example.com/${word}"`, word), []);
+	});
+
+	test('finds a word inside GString interpolation', () => {
+		const text = `log.info "found \${${word}.count()}"`;
+		assert.deepStrictEqual(findWordMatches(text, word), [{ line: 0, column: text.indexOf(`${word}.count`) }]);
+	});
+
+	test('skips import lines', () => {
+		assert.deepStrictEqual(findWordMatches(`import com.asaas.${word}\n${word}.get(1)`, word), [{ line: 1, column: 0 }]);
+	});
+
+	test('scopes by receiver, accepting safe navigation', () => {
+		const text = 'widgetService.save(w)\nwidgetService?.save(w)\norder.save()';
+		assert.deepStrictEqual(findWordMatches(text, 'save', 'widgetService').map(match => match.line), [0, 1]);
 	});
 });

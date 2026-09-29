@@ -180,7 +180,7 @@ function resolveFieldTargets(context: DefinitionContext, before: string): Defini
 
 function resolveOwnFieldTarget(context: DefinitionContext, fieldName: string): DefinitionTarget[] {
 	const ownField = parseDocumentSymbols(context.documentText, context.sourcePath).fields.find(
-		field => field.name === fieldName
+		field => field.classMember && field.name === fieldName
 	);
 	if (ownField) {
 		return [{ uri: context.sourcePath, line: ownField.line, column: ownField.column, label: fieldName }];

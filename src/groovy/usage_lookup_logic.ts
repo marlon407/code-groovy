@@ -1,19 +1,21 @@
 import * as path from 'path';
-import { CallSiteRecord } from './call_site_extractor';
+import { CallSiteRecord, resolveReceiverType } from './call_site_extractor';
 import { parseDocumentSymbols } from './symbol_parser';
 
 export type UsageTarget =
 	| { kind: 'class'; name: string }
-	| { kind: 'method'; name: string; receiverName?: string; sourcePath?: string };
+	| { kind: 'method'; name: string; className: string };
 
 export interface UsageLookupIndex {
 	lookup(methodName: string, receiverName?: string): CallSiteRecord[];
 	lookupByReceiver(receiverName: string): CallSiteRecord[];
+	filesMentioning(typeName: string): string[];
 	isReady(): boolean;
 }
 
 export interface TextScan {
 	receiverFieldName?: string;
+	files?: string[];
 }
 
 export interface UsageResolution {
@@ -44,12 +46,11 @@ export function findDeclarationTarget(
 	if (!method) {
 		return undefined;
 	}
-	return {
-		kind: 'method',
-		name: word,
-		receiverName: grailsFieldNameForClass(simpleName(method.classFqn)),
-		sourcePath
-	};
+	const className = simpleName(method.classFqn);
+	if (word === className) {
+		return { kind: 'class', name: word };
+	}
+	return { kind: 'method', name: word, className };
 }
 
 export function findReferenceTarget(
@@ -75,14 +76,9 @@ export function findReferenceTarget(
 		return undefined;
 	}
 	if (receiver && receiver !== 'this') {
-		return { kind: 'method', name: word, receiverName: receiver };
+		return { kind: 'method', name: word, className: receiverClassName(documentText, line, receiver) };
 	}
-	return {
-		kind: 'method',
-		name: word,
-		receiverName: grailsFieldNameForClass(owningClassName(documentText, sourcePath, line)),
-		sourcePath
-	};
+	return { kind: 'method', name: word, className: owningClassName(documentText, sourcePath, line) };
 }
 
 export function resolveUsages(target: UsageTarget, index: UsageLookupIndex, mode: UsageMode): UsageResolution {
@@ -92,25 +88,22 @@ export function resolveUsages(target: UsageTarget, index: UsageLookupIndex, mode
 			...index.lookup(target.name),
 			...(target.name.endsWith('Service') ? index.lookupByReceiver(grailsFieldNameForClass(target.name)) : [])
 		]);
-		const needsTextScan = mode === 'references' || records.length === 0;
-		return { records, textScans: needsTextScan ? [{}] : [] };
+		if (mode === 'navigate' && records.length > 0) {
+			return { records, textScans: [] };
+		}
+		if (!index.isReady()) {
+			return { records, textScans: [{}] };
+		}
+		const files = index.filesMentioning(target.name);
+		return { records, textScans: files.length > 0 ? [{ files }] : [] };
 	}
 
-	const all = index.lookup(target.name);
-	const scoped = all.filter(record =>
-		(target.receiverName !== undefined && record.receiverName === target.receiverName)
-		|| (target.sourcePath !== undefined
-			&& record.sourcePath === target.sourcePath
-			&& (record.receiverName === undefined || record.receiverName === 'this'))
-	);
-	const records = scoped.length > 0 ? scoped : all;
+	const fieldName = grailsFieldNameForClass(target.className);
+	const records = index.lookup(target.name).filter(record => isScopedCall(record, target.className, fieldName));
 	if (records.length > 0 || index.isReady()) {
 		return { records, textScans: [] };
 	}
-	return {
-		records,
-		textScans: target.receiverName ? [{ receiverFieldName: target.receiverName }, {}] : [{}]
-	};
+	return { records, textScans: [{ receiverFieldName: fieldName }] };
 }
 
 export function uniqueRecords(records: CallSiteRecord[]): CallSiteRecord[] {
@@ -125,10 +118,31 @@ export function uniqueRecords(records: CallSiteRecord[]): CallSiteRecord[] {
 	});
 }
 
+function isScopedCall(record: CallSiteRecord, className: string, fieldName: string): boolean {
+	if (record.receiverName === undefined || record.receiverName === 'this') {
+		return fileClassName(record.sourcePath) === className;
+	}
+	return record.receiverName === fieldName
+		|| record.receiverName === className
+		|| record.receiverType === className;
+}
+
+function receiverClassName(documentText: string, line: number, receiver: string): string {
+	const declaredType = resolveReceiverType(documentText, line, receiver);
+	if (declaredType) {
+		return declaredType;
+	}
+	return /^[A-Z]/.test(receiver) ? receiver : receiver.charAt(0).toUpperCase() + receiver.slice(1);
+}
+
 function owningClassName(documentText: string, sourcePath: string, line: number): string {
 	const classes = parseDocumentSymbols(documentText, sourcePath).classes.filter(cls => cls.line <= line);
 	const owner = classes[classes.length - 1];
-	return owner ? owner.simpleName : path.basename(sourcePath, path.extname(sourcePath));
+	return owner ? owner.simpleName : fileClassName(sourcePath);
+}
+
+function fileClassName(sourcePath: string): string {
+	return path.basename(sourcePath, path.extname(sourcePath));
 }
 
 function simpleName(fqn: string): string {
