@@ -91,6 +91,9 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			if (occurrences.length === 0) {
 				occurrences = this.callSiteIndex.lookup(word).map(callSiteToLocation);
 			}
+			if (occurrences.length === 0) {
+				occurrences = await findWordOccurrences(word, undefined, token);
+			}
 		} else {
 			const declaringClassName = path.basename(document.uri.fsPath, path.extname(document.uri.fsPath));
 			const receiverFieldName = grailsFieldNameForClass(declaringClassName);
@@ -101,9 +104,9 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 			if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
 				occurrences = await findWordOccurrences(word, receiverFieldName, token);
 			}
-		}
-		if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
-			occurrences = await findWordOccurrences(word, undefined, token);
+			if (occurrences.length === 0 && !this.callSiteIndex.isReady()) {
+				occurrences = await findWordOccurrences(word, undefined, token);
+			}
 		}
 		const declUri = document.uri.toString();
 		const usages = occurrences.filter(location => !(location.uri.toString() === declUri && location.range.start.line === declLine));
