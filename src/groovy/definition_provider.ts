@@ -9,6 +9,7 @@ import { ProjectTagLibTag } from '../gsp/taglib_parser';
 import { findWordOccurrences, callSiteToLocation } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
 import { findDeclarationTarget, resolveUsages } from './usage_lookup_logic';
+import { isInsideComment, isInsideDocLink } from './text_scan_logic';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
 	constructor(
@@ -42,6 +43,11 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 				artifactIndex: this.artifactIndex
 			});
 			return toLocations(gspTargets);
+		}
+
+		if (isInsideComment(document.getText(), document.offsetAt(position))
+			&& !isInsideDocLink(document.lineAt(position.line).text, position.character)) {
+			return undefined;
 		}
 
 		const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_]\w*/);

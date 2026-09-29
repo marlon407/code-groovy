@@ -13,6 +13,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Recognize untyped Grails service injection (`def someService`) as a usage of the service class, for both Go to Definition (Ctrl+Click / Cmd+Click) and Find All References, by matching the Grails field-name convention (field name = class name in camelCase, kept as-is when it starts with an acronym like `URLService`) even when the class name itself never appears as literal text
 - Recognize method declarations with generic or array return types and same-line annotations (`Map<String, Object> build(...)`, `String[] names()`, `@Transactional def save()`), and stop treating `return foo(...)` as a declaration
 - Add Go to Definition (Ctrl+Click / Cmd+Click) for field and property access (`receiver.field`, including `this.field`), resolving the receiver's declared type from the enclosing document before falling back to the Grails naming convention
+- Do not offer Go to Definition (Ctrl+Click / Cmd+Click) on words inside `//` and `/* */` comments, except `{@link ...}` references in Groovydoc
 
 ## [0.2.3] - 2026-09-28
 - Internal: add CI, contribution guidelines and automated release workflow (no functional changes)
