@@ -1,5 +1,5 @@
 import { parsePackageName } from './class_parser';
-import { braceDepthAtLineStarts, closingBraceLine, maskNonCode } from './text_scan_logic';
+import { braceDepthAtLineStarts, closingBraceLine, maskNonCode, parenDepthAtLineStarts } from './text_scan_logic';
 
 export interface ParsedMethod {
 	name: string;
@@ -40,7 +40,7 @@ export interface ParsedDocumentSymbols {
 }
 
 const CLASS_LINE_RE =
-	/^\s*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed)\s+)*(class|interface|trait|enum)\s+([A-Za-z_]\w*)(?:\s+extends\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*))?(?:\s+implements\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*))?\b/;
+	/^\s*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed)\s+)*(class|interface|trait|enum)\s+([A-Za-z_]\w*)(?:\s*<[^{]*?>)?(?:\s+extends\s+(.+?))?(?:\s+implements\s+(.+?))?\s*(?:\{.*)?$/;
 const MODIFIER = '(?:public|protected|private|static|final|abstract|synchronized)';
 const RETURN_TYPE = '(?:def|(?:void|boolean|byte|char|short|int|long|float|double|[A-Z][\\w.]*(?:<[^()]*>)?)(?:\\[\\])*)';
 const METHOD_LINE_RE = new RegExp(
@@ -56,16 +56,23 @@ function splitTypeList(raw: string | undefined): string[] {
 	if (!raw) {
 		return [];
 	}
-	return raw.split(',').map(part => part.trim()).filter(Boolean);
+	let withoutGenerics = raw;
+	while (/<[^<>]*>/.test(withoutGenerics)) {
+		withoutGenerics = withoutGenerics.replace(/<[^<>]*>/g, '');
+	}
+	return withoutGenerics.split(',').map(part => part.trim()).filter(part => /^[A-Za-z_][\w.]*$/.test(part));
 }
 
 export function parseDocumentSymbols(text: string, sourcePath?: string, maskedText = maskNonCode(text)): ParsedDocumentSymbols {
 	const packageName = parsePackageName(text);
-	const lines = text.split('\n');
+	const lines = maskedText.split('\n');
 	const classes: ParsedClassSymbol[] = [];
 	const methods: ParsedMethod[] = [];
 	const fields: ParsedField[] = [];
 	const depths = braceDepthAtLineStarts(maskedText);
+	const parenDepths = parenDepthAtLineStarts(maskedText);
+	const isClassMemberLine = (line: number) =>
+		parenDepths[line] === 0 && depths[line] === (openClasses[openClasses.length - 1]?.bodyDepth ?? 1);
 	const scriptClassFqn = packageName ? `${packageName}.${inferScriptClassName(sourcePath)}` : inferScriptClassName(sourcePath);
 	const openClasses: ParsedClassSymbol[] = [];
 	let currentClassFqn = scriptClassFqn;
@@ -136,7 +143,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 				line: i,
 				column: column >= 0 ? column : 0,
 				classFqn: currentClassFqn,
-				classMember: depths[i] === 1
+				classMember: isClassMemberLine(i)
 			});
 			continue;
 		}
@@ -152,7 +159,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 				line: i,
 				column: column >= 0 ? column : 0,
 				classFqn: currentClassFqn,
-				classMember: depths[i] === 1
+				classMember: isClassMemberLine(i)
 			});
 		}
 	}

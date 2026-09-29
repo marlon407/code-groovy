@@ -1,5 +1,5 @@
 import { ParsedClassSymbol, ParsedDocumentSymbols, ParsedMethod, parseDocumentSymbols } from './symbol_parser';
-import { braceDepthAtLineStarts, isImportLine, maskNonCode } from './text_scan_logic';
+import { braceDepthAtLineStarts, isImportLine, maskNonCode, parenDepthAtLineStarts } from './text_scan_logic';
 
 export const CHAINED_RECEIVER = '.';
 
@@ -152,7 +152,7 @@ export function ownerClassByLine(classes: ParsedClassSymbol[], lineCount: number
 	return owners;
 }
 
-function receiverBefore(maskedText: string, offset: number): string | undefined {
+export function receiverBefore(maskedText: string, offset: number): string | undefined {
 	let i = skipWhitespaceBackward(maskedText, offset - 1);
 	if (maskedText[i] !== '.') {
 		return undefined;
@@ -198,7 +198,7 @@ function createReceiverTypeResolver(
 	owners: Array<ParsedClassSymbol | undefined>
 ): ReceiverTypeResolver {
 	const declarations = collectReceiverDeclarations(maskedLines);
-	const scopeStarts = scopeStartByLine(braceDepthAtLineStarts(maskedText), owners);
+	const scopeStarts = scopeStartByLine(maskedLines, braceDepthAtLineStarts(maskedText), parenDepthAtLineStarts(maskedText), owners);
 	const classFields = new Map<string, string>();
 	for (const field of symbols.fields) {
 		if (field.classMember) {
@@ -217,13 +217,19 @@ function createReceiverTypeResolver(
 	};
 }
 
-function scopeStartByLine(depths: number[], owners: Array<ParsedClassSymbol | undefined>): number[] {
+function scopeStartByLine(
+	maskedLines: string[],
+	depths: number[],
+	parenDepths: number[],
+	owners: Array<ParsedClassSymbol | undefined>
+): number[] {
 	const starts: number[] = new Array(owners.length);
 	let lastMemberLevelLine = 0;
 	for (let line = 0; line < owners.length; line++) {
 		const owner = owners[line];
 		const memberDepth = owner?.bodyDepth ?? 0;
-		if ((depths[line] ?? 0) <= memberDepth) {
+		const continuesDeclaration = (parenDepths[line] ?? 0) > 0 || /^\s*\{/.test(maskedLines[line] ?? '');
+		if ((depths[line] ?? 0) <= memberDepth && !continuesDeclaration) {
 			lastMemberLevelLine = line;
 			starts[line] = memberDepth > 0 ? line : 0;
 		} else {

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { CallSiteIndexStore } from '../../groovy/call_site_index_store';
 import { analyzeSource, excludeDeclarationCallSites } from '../../groovy/call_site_extractor';
 import { parseDocumentSymbols } from '../../groovy/symbol_parser';
-import { TypeHierarchyStore } from '../../groovy/type_hierarchy_store';
+import { parseImports, TypeHierarchyStore } from '../../groovy/type_hierarchy_store';
 import {
 	findDeclarationTarget,
 	findReferenceTarget,
@@ -30,7 +30,7 @@ function buildHierarchy(files: Record<string, string>): TypeHierarchyStore {
 	const hierarchy = new TypeHierarchyStore();
 	for (const [sourcePath, text] of Object.entries(files)) {
 		const symbols = parseDocumentSymbols(text, sourcePath);
-		hierarchy.add(symbols.classes, symbols.methods);
+		hierarchy.add(symbols.classes, symbols.methods, parseImports(text));
 	}
 	return hierarchy;
 }
@@ -76,7 +76,8 @@ suite('findDeclarationTarget', () => {
 		assert.deepStrictEqual(findDeclarationTarget(source, WIDGET_SERVICE, 1, 'rename'), {
 			kind: 'method',
 			name: 'rename',
-			className: 'WidgetService'
+			className: 'WidgetService',
+			classFqn: 'WidgetService'
 		});
 	});
 
@@ -96,7 +97,8 @@ suite('findDeclarationTarget', () => {
 		assert.deepStrictEqual(findDeclarationTarget(nested, '/tmp/PaymentService.groovy', 2, 'process'), {
 			kind: 'method',
 			name: 'process',
-			className: 'PaymentService'
+			className: 'PaymentService',
+			classFqn: 'PaymentService'
 		});
 	});
 
@@ -310,15 +312,97 @@ suite('resolveUsages — type hierarchy', () => {
 	});
 });
 
+suite('resolveUsages — homonyms and overrides', () => {
+	const files: Record<string, string> = {
+		'/tmp/a/BaseDto.groovy': 'package a\nclass BaseDto {\n    Map toMap() {\n        [:]\n    }\n}',
+		'/tmp/b/BaseDto.groovy': 'package b\nclass BaseDto {\n    Map toMap() {\n        [:]\n    }\n}',
+		'/tmp/a/OrderDto.groovy': 'package a\nclass OrderDto extends BaseDto {\n}',
+		'/tmp/c/PixDto.groovy': 'package c\nimport b.BaseDto\nclass PixDto extends BaseDto {\n}',
+		'/tmp/a/CustomDto.groovy': 'package a\nclass CustomDto extends BaseDto {\n    Map toMap() {\n        super.toMap()\n    }\n}',
+		'/tmp/a/Caller.groovy': [
+			'package a',
+			'class Caller {',
+			'    def run(OrderDto order, PixDto pix, CustomDto custom) {',
+			'        order.toMap()',
+			'        pix.toMap()',
+			'        custom.toMap()',
+			'    }',
+			'}'
+		].join('\n')
+	};
+	const index = buildIndex(files);
+	const hierarchy = buildHierarchy(files);
+
+	test('follows only the subclasses of the base class in the right package', () => {
+		const resolution = resolveUsages({ kind: 'method', name: 'toMap', className: 'BaseDto', classFqn: 'a.BaseDto' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/a/Caller.groovy:3', '/tmp/a/CustomDto.groovy:3']);
+	});
+
+	test('attributes calls on a subclass that overrides the method to the override, not its own super call', () => {
+		const override = resolveUsages({ kind: 'method', name: 'toMap', className: 'CustomDto', classFqn: 'a.CustomDto' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(override.records), ['/tmp/a/Caller.groovy:5']);
+	});
+
+	test('resolves the other homonym through its import', () => {
+		const resolution = resolveUsages({ kind: 'method', name: 'toMap', className: 'BaseDto', classFqn: 'b.BaseDto' }, index, 'navigate', hierarchy);
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/a/Caller.groovy:4']);
+	});
+});
+
+suite('findReferenceTarget — receivers the index also understands', () => {
+	const source = [
+		'class Child extends Base {',
+		'    def run() {',
+		'        super.greet()',
+		'        builder',
+		'            .withName("a")',
+		'        helper().greet()',
+		'    }',
+		'}'
+	].join('\n');
+	const lines = source.split('\n');
+	const at = (line: number, word: string) => findReferenceTarget(source, '/tmp/Child.groovy', line, lines[line].indexOf(word), word);
+
+	test('maps super to the superclass', () => {
+		assert.deepStrictEqual(at(2, 'greet'), { kind: 'method', name: 'greet', className: 'Base' });
+	});
+
+	test('resolves the superclass of super through the imports or the package', () => {
+		const superTarget = (text: string) => {
+			const textLines = text.split('\n');
+			const line = textLines.findIndex(candidate => candidate.includes('super.greet'));
+			return findReferenceTarget(text, '/tmp/Child.groovy', line, textLines[line].indexOf('greet'), 'greet');
+		};
+		const body = 'class Child extends Base {\n    def run() {\n        super.greet()\n    }\n}';
+		assert.deepStrictEqual(superTarget(`package p\nimport q.Base\n${body}`), { kind: 'method', name: 'greet', className: 'Base', classFqn: 'q.Base' });
+		assert.deepStrictEqual(superTarget(`package p\n${body}`), { kind: 'method', name: 'greet', className: 'Base', classFqn: 'p.Base' });
+	});
+
+	test('uses a receiver on the previous line', () => {
+		assert.deepStrictEqual(at(4, 'withName'), { kind: 'method', name: 'withName', className: 'Builder' });
+	});
+
+	test('returns nothing for the end of a call chain', () => {
+		assert.strictEqual(at(5, 'greet'), undefined);
+	});
+});
+
 suite('TypeHierarchyStore', () => {
-	test('walks ancestors and descendants transitively and survives cycles', () => {
+	test('resolves parents through explicit imports, the same package, wildcard imports or a unique name', () => {
 		const hierarchy = new TypeHierarchyStore();
-		hierarchy.add([
-			{ simpleName: 'C', extendsTypes: ['B'] },
-			{ simpleName: 'B', extendsTypes: ['A'], implementsTypes: ['Marker'] },
-			{ simpleName: 'A', extendsTypes: ['C'] }
-		], []);
-		assert.deepStrictEqual(hierarchy.ancestorsOf('C').sort(), ['A', 'B', 'Marker']);
-		assert.deepStrictEqual(hierarchy.descendantsOf('Marker').sort(), ['A', 'B', 'C']);
+		hierarchy.add([{ simpleName: 'Base', fqn: 'x.Base' }, { simpleName: 'Base', fqn: 'y.Base' }, { simpleName: 'Unique', fqn: 'z.Unique' }], []);
+		hierarchy.add([{ simpleName: 'A', fqn: 'p.A', extendsTypes: ['Base'] }], [], ['y.Base']);
+		hierarchy.add([{ simpleName: 'B', fqn: 'x.B', extendsTypes: ['Base'], implementsTypes: ['Unique'] }], []);
+		hierarchy.add([{ simpleName: 'C', fqn: 'q.C', extendsTypes: ['Base'] }], [], ['y.*']);
+		hierarchy.add([{ simpleName: 'D', fqn: 'q.D', extendsTypes: ['Base'] }], []);
+		assert.deepStrictEqual(hierarchy.parentsOf('p.A'), ['y.Base']);
+		assert.deepStrictEqual(hierarchy.parentsOf('x.B'), ['x.Base', 'z.Unique']);
+		assert.deepStrictEqual(hierarchy.parentsOf('q.C'), ['y.Base']);
+		assert.deepStrictEqual(hierarchy.parentsOf('q.D'), []);
+		assert.deepStrictEqual(hierarchy.childrenOf('y.Base').sort(), ['p.A', 'q.C']);
+	});
+
+	test('parses imports, skipping static ones and aliases', () => {
+		assert.deepStrictEqual(parseImports('import a.b.C\nimport static a.b.C.d\nimport x.y.*\nimport m.N as Alias'), ['a.b.C', 'x.y.*', 'm.N']);
 	});
 });

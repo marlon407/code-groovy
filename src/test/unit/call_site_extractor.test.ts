@@ -146,6 +146,47 @@ suite('call_site_extractor', () => {
 		assert.deepStrictEqual(confirms.map(record => record.receiverType), ['Customer', 'Payment', undefined]);
 	});
 
+	test('keeps parameter types from multi-line signatures and Allman braces', () => {
+		const text = [
+			'class Caller {',
+			'    Payment payer',
+			'    void run(Customer payer,',
+			'            Boolean flag) {',
+			'        payer.save()',
+			'    }',
+			'    void other(Order order)',
+			'    {',
+			'        order.save()',
+			'    }',
+			'}'
+		].join('\n');
+		const saves = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'save');
+		assert.deepStrictEqual(saves.map(record => record.receiverType), ['Customer', 'Order']);
+	});
+
+	test('does not treat a parameter on its own line as a class field', () => {
+		const text = [
+			'class Caller {',
+			'    void a(Long id,',
+			'           Payment item',
+			'    ) {',
+			'    }',
+			'    void b(item) {',
+			'        item.save()',
+			'    }',
+			'    static class Inner {',
+			'        def paymentService',
+			'        void c() {',
+			'            paymentService.pay()',
+			'        }',
+			'    }',
+			'}'
+		].join('\n');
+		const records = extractCallSites(text, '/tmp/Caller.groovy');
+		assert.strictEqual(records.find(record => record.methodName === 'save')?.receiverType, undefined);
+		assert.strictEqual(records.find(record => record.methodName === 'pay')?.receiverType, 'PaymentService');
+	});
+
 	test('an untyped def or closure parameter hides an earlier typed declaration', () => {
 		const text = [
 			'def run(Customer entity) {',
@@ -279,5 +320,25 @@ suite('excludeDeclarationCallSites', () => {
 		const methods: ParsedMethod[] = [];
 		const filtered = excludeDeclarationCallSites(callSites, methods);
 		assert.strictEqual(filtered.length, 1);
+	});
+});
+
+suite('parseDocumentSymbols — masked source', () => {
+	test('ignores declarations inside strings and reads qualified or generic supertypes', () => {
+		const text = [
+			'class Report extends com.acme.BaseReport<Map<String, Long>> implements Serializable, java.io.Closeable {',
+			'    String sql = """',
+			'        SELECT SUM(value)',
+			'        class Fake {',
+			'    """',
+			'    void close() {',
+			'    }',
+			'}'
+		].join('\n');
+		const symbols = parseDocumentSymbols(text, '/tmp/Report.groovy');
+		assert.deepStrictEqual(symbols.classes.map(cls => cls.simpleName), ['Report']);
+		assert.deepStrictEqual(symbols.methods.map(method => `${method.name}@${method.classFqn}`), ['close@Report']);
+		assert.deepStrictEqual(symbols.classes[0].extendsTypes, ['com.acme.BaseReport']);
+		assert.deepStrictEqual(symbols.classes[0].implementsTypes, ['Serializable', 'java.io.Closeable']);
 	});
 });

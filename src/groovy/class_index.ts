@@ -21,7 +21,7 @@ import { ProjectTagLibTag } from '../gsp/taglib_parser';
 import { indexWorkspaceDocument } from './workspace_symbol_index';
 import { parseDocumentSymbols, ParsedMethod } from './symbol_parser';
 import { maskNonCode } from './text_scan_logic';
-import { TypeHierarchyStore } from './type_hierarchy_store';
+import { parseImports, TypeHierarchyStore } from './type_hierarchy_store';
 
 const CACHE_KEY = 'codeGroovy.classpathIndex.v2';
 const SOURCE_EXCLUDE = '**/{node_modules,.git,build,target,out}/**';
@@ -37,6 +37,7 @@ interface IndexedSource {
 	methods: ParsedMethod[];
 	callSites: CallSiteRecord[];
 	typeMentions: string[];
+	imports: string[];
 	artifactEntry?: GrailsArtifactEntry;
 }
 
@@ -290,7 +291,7 @@ export class ClassIndex implements vscode.Disposable {
 		for (const [filePath, indexed] of this.sourceCache) {
 			this.store.add(indexed.types);
 			this.methodStore.add(indexed.methods);
-			this.typeHierarchy.add(indexed.types, indexed.methods);
+			this.typeHierarchy.add(indexed.types, indexed.methods, indexed.imports);
 			this.callSiteIndex.addTypeMentions(filePath, indexed.typeMentions);
 			for (const callSite of indexed.callSites) {
 				callSites.push(callSite);
@@ -434,6 +435,7 @@ async function indexSourceFile(filePath: string): Promise<IndexedSource | undefi
 			methods: indexed.methods,
 			callSites: excludeDeclarationCallSites(analysis.callSites, indexed.methods),
 			typeMentions: analysis.typeMentions,
+			imports: parseImports(text),
 			artifactEntry: filePath.endsWith('.groovy') ? indexGroovyFile(filePath) : undefined
 		};
 	} catch {

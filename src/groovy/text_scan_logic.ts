@@ -178,6 +178,21 @@ export function braceDepthAtLineStarts(maskedText: string): number[] {
 	return depths;
 }
 
+export function parenDepthAtLineStarts(maskedText: string): number[] {
+	const depths = [0];
+	let depth = 0;
+	for (const ch of maskedText) {
+		if (ch === '(') {
+			depth++;
+		} else if (ch === ')') {
+			depth = Math.max(0, depth - 1);
+		} else if (ch === '\n') {
+			depths.push(depth);
+		}
+	}
+	return depths;
+}
+
 export function closingBraceLine(maskedText: string, fromOffset: number, fromLine: number): number | undefined {
 	let line = fromLine;
 	let depth = 0;
