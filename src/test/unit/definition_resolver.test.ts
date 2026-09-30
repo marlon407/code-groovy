@@ -5,7 +5,7 @@ import { ClassIndexStore } from '../../groovy/class_index_store';
 import { resolveDefinitions } from '../../groovy/definition_resolver';
 import { GrailsArtifactIndex, indexGroovyFile } from '../../groovy/grails_artifact_index';
 import { candidateClassNamesForReceiver, serviceBeanToClassName } from '../../groovy/service_bean';
-import { findMethodInClassHierarchy, findMethodInText, parseTypeDeclaration } from '../../groovy/method_navigation_logic';
+import { findMethodInClassHierarchy, findMethodInText, listMethodsInClassHierarchy, parseTypeDeclaration } from '../../groovy/method_navigation_logic';
 import { buildImportMap, resolveSimpleTypeName } from '../../groovy/type_resolver';
 import { indexWorkspaceDocument } from '../../groovy/workspace_symbol_index';
 
@@ -442,5 +442,29 @@ suite('local variables and parameters', () => {
 			'}'
 		].join('\n');
 		assert.deepStrictEqual(at(source, 5, 'name').map(target => path.basename(target.uri)), ['WidgetBox.groovy']);
+	});
+});
+
+suite('listMethodsInClassHierarchy — same-named classes and supertypes', () => {
+	const sources: Record<string, string> = {
+		'/w/credit/BaseRequestBuilder.groovy': 'package adyen.credit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n    Map buildInstallments() {\n    }\n}',
+		'/w/debit/BaseRequestBuilder.groovy': 'package adyen.debit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n    String buildReference() {\n    }\n}',
+		'/w/credit/AuthoriseRequestBuilder.groovy': 'package adyen.credit\nclass AuthoriseRequestBuilder extends BaseRequestBuilder {\n    Map build() {\n    }\n}',
+		'/w/debit/AuthoriseRequestBuilder.groovy': 'package adyen.debit\nclass AuthoriseRequestBuilder extends BaseRequestBuilder {\n    Map build() {\n    }\n}'
+	};
+	const readFile = (filePath: string) => sources[filePath];
+	const findEntries = (className: string) => Object.keys(sources)
+		.filter(filePath => filePath.endsWith(`/${className}.groovy`))
+		.sort()
+		.map(filePath => ({ filePath }));
+	const names = (referencing?: string) =>
+		listMethodsInClassHierarchy(readFile, findEntries, 'AuthoriseRequestBuilder', new Set(), 0, referencing).map(method => method.name);
+
+	test('lists the inherited methods of the class the document refers to', () => {
+		assert.deepStrictEqual(names('package adyen\nimport adyen.debit.AuthoriseRequestBuilder\nclass X {\n}'), ['build', 'buildAmount', 'buildReference']);
+	});
+
+	test('resolves each same-named class against its own supertype when the document does not pick one', () => {
+		assert.deepStrictEqual(names(), ['build', 'buildAmount', 'buildInstallments', 'buildReference']);
 	});
 });

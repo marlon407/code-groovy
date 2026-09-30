@@ -91,16 +91,18 @@ export function listMethodsInClassHierarchy(
 	depth = 0,
 	referencingContent?: string
 ): ListedMethod[] {
-	if (!className || visited.has(className) || depth > MAX_HIERARCHY_DEPTH) {
+	if (!className || depth > MAX_HIERARCHY_DEPTH) {
 		return [];
 	}
-	visited.add(className);
 
 	const byName = new Map<string, ListedMethod>();
-	let parents: string[] = [];
-	let parentsContent: string | undefined;
+	const lineage: Array<{ parents: string[]; content: string }> = [];
 
 	for (const entry of preferReferencedEntries(findEntries(className), className, readFile, referencingContent)) {
+		if (visited.has(entry.filePath)) {
+			continue;
+		}
+		visited.add(entry.filePath);
 		const content = readFile(entry.filePath);
 		if (!content) {
 			continue;
@@ -116,23 +118,22 @@ export function listMethodsInClassHierarchy(
 			}
 		}
 
-		if (parents.length === 0) {
-			parents = parseTypeDeclaration(content)?.parents ?? [];
-			parentsContent = content;
-		}
+		lineage.push({ parents: parseTypeDeclaration(content)?.parents ?? [], content });
 	}
 
-	for (const parent of parents) {
-		for (const inherited of listMethodsInClassHierarchy(
-			readFile,
-			findEntries,
-			parent,
-			visited,
-			depth + 1,
-			parentsContent
-		)) {
-			if (!byName.has(inherited.name)) {
-				byName.set(inherited.name, inherited);
+	for (const { parents, content } of lineage) {
+		for (const parent of parents) {
+			for (const inherited of listMethodsInClassHierarchy(
+				readFile,
+				findEntries,
+				parent,
+				visited,
+				depth + 1,
+				content
+			)) {
+				if (!byName.has(inherited.name)) {
+					byName.set(inherited.name, inherited);
+				}
 			}
 		}
 	}

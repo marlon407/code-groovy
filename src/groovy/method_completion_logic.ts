@@ -74,7 +74,7 @@ export function resolveMethodCompletions(context: MethodCompletionContext): Meth
 	const completions: MethodCompletion[] = [];
 
 	for (const className of resolveReceiverClassNames(context.documentText, access.receiver)) {
-		const methods = listMethodsInClassHierarchy(readFile, findEntries, className);
+		const methods = listMethodsInClassHierarchy(readFile, findEntries, className, new Set(), 0, context.documentText);
 		for (const method of methods) {
 			if (prefix && !method.name.toLowerCase().startsWith(prefix)) {
 				continue;
