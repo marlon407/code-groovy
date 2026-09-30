@@ -1,11 +1,13 @@
 import * as assert from 'assert';
 import {
-	braceDepthAtLineStarts,
+	depthsAtLineStarts,
 	findWordMatches,
 	isImportLine,
 	isInsideComment,
 	isInsideDocLink,
-	maskNonCode
+	lineStartOffsets,
+	maskNonCode,
+	splitLines
 } from '../../groovy/text_scan_logic';
 
 function offsetOf(text: string, needle: string, occurrence = 0): number {
@@ -78,6 +80,17 @@ suite('isInsideDocLink', () => {
 	});
 });
 
+suite('isInsideDocLink — @see and @throws', () => {
+	test('flags the type named by @see, @throws and @exception, but not the text after it', () => {
+		const line = ' * @see PaymentService#save then @throws BusinessException when it fails';
+		assert.strictEqual(isInsideDocLink(line, line.indexOf('PaymentService')), true);
+		assert.strictEqual(isInsideDocLink(line, line.indexOf('save')), true);
+		assert.strictEqual(isInsideDocLink(line, line.indexOf('BusinessException')), true);
+		assert.strictEqual(isInsideDocLink(line, line.indexOf('fails')), false);
+		assert.strictEqual(isInsideDocLink(' * @exception IOException', 15), true);
+	});
+});
+
 suite('isImportLine', () => {
 	test('matches a plain import statement', () => {
 		assert.strictEqual(isImportLine('import com.asaas.domain.receivableanticipationpartner.AnticipationPartnerSettlementItemPixTransaction'), true);
@@ -134,15 +147,54 @@ suite('maskNonCode — slashy strings', () => {
 	});
 });
 
-suite('braceDepthAtLineStarts', () => {
+suite('maskNonCode — slashy openers and dollar-slashy strings', () => {
+	test('blanks a dollar-slashy string, keeping its escapes and the code after it', () => {
+		const text = 'def g = $/src/*.groovy $$ $/ /$\nfoo()\nbar()';
+		const masked = maskNonCode(text);
+		assert.ok(!masked.includes('src'));
+		assert.ok(masked.includes('foo()') && masked.includes('bar()'));
+	});
+
+	test('opens a slashy string after in, case, * and + but not after an operand, a postfix ++ or a line break', () => {
+		assert.ok(!maskNonCode('x in /a"b/\nfoo()').includes('a"b'));
+		assert.ok(!maskNonCode('switch (x) {\n case /a"b/: foo()\n}').includes('a"b'));
+		assert.ok(!maskNonCode('def x = a * /b"c/\nbar()').includes('b"c'));
+		assert.ok(!maskNonCode('def x = "a" + /b"c/\nbar()').includes('b"c'));
+		for (const text of ['def x = i++ / 2\nfoo("q")', 'def r = total\n    /count\nfoo()', 'def z = 1/\nbar()']) {
+			assert.ok(maskNonCode(text).includes('foo(') || maskNonCode(text).includes('bar()'), text);
+			assert.ok(maskNonCode(text).includes('/'), text);
+		}
+	});
+});
+
+suite('depthsAtLineStarts', () => {
 	test('reports the brace depth at the start of each line', () => {
 		const text = 'class A {\n    String name\n    def run() {\n        String local\n    }\n}';
-		assert.deepStrictEqual(braceDepthAtLineStarts(maskNonCode(text)), [0, 1, 1, 2, 2, 1]);
+		assert.deepStrictEqual(depthsAtLineStarts(maskNonCode(text)).braces, [0, 1, 1, 2, 2, 1]);
 	});
 
 	test('ignores braces inside strings and comments', () => {
 		const text = 'class A {\n    String s = "{" // }\n    String t\n}';
-		assert.deepStrictEqual(braceDepthAtLineStarts(maskNonCode(text)), [0, 1, 1, 1]);
+		assert.deepStrictEqual(depthsAtLineStarts(maskNonCode(text)).braces, [0, 1, 1, 1]);
+	});
+
+	test('reports parenthesis depth and treats CRLF like LF', () => {
+		const text = 'def run(String a,\r\n        Long b) {\r\n}';
+		assert.deepStrictEqual(depthsAtLineStarts(maskNonCode(text)), { braces: [0, 0, 1], parens: [0, 1, 0] });
+	});
+});
+
+suite('splitLines and lineStartOffsets', () => {
+	test('split on LF, CRLF and a lone CR, with offsets that point at each line start', () => {
+		const text = 'a\nbb\r\nccc\rd';
+		assert.deepStrictEqual(splitLines(text), ['a', 'bb', 'ccc', 'd']);
+		assert.deepStrictEqual(lineStartOffsets(text), [0, 2, 6, 10]);
+	});
+
+	test('keeps CR characters of CRLF comments so masked and original lines match', () => {
+		const text = '/* a\r\n b */\r\nfoo()';
+		assert.deepStrictEqual(splitLines(maskNonCode(text)).length, splitLines(text).length);
+		assert.strictEqual(splitLines(maskNonCode(text))[2], 'foo()');
 	});
 });
 

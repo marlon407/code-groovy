@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { analyzeSource, excludeDeclarationCallSites, resolveChainRootType, resolveReceiverType } from '../../groovy/call_site_extractor';
+import { analyzeSource, excludeDeclarationCallSites, receiverAt, receiverBefore, receiverChain, resolveChainRootType, resolveReceiverType } from '../../groovy/call_site_extractor';
 import { ParsedMethod, parseDocumentSymbols } from '../../groovy/symbol_parser';
 
 suite('call_site_extractor', () => {
@@ -257,7 +257,7 @@ suite('call_site_extractor', () => {
 			'}'
 		].join('\n');
 		const helpers = analyzeSource(text, '/tmp/PaymentService.groovy').callSites.filter(record => record.methodName === 'helper' && record.line !== 8);
-		assert.deepStrictEqual(helpers.map(record => `${record.ownerClass}@${record.line}`), ['PaymentService@3', 'Item@6']);
+		assert.deepStrictEqual(helpers.map(record => `${record.ownerClass}@${record.line}`), ['PaymentService@3', 'PaymentService.Item@6']);
 	});
 
 	test('records the root type and path of a receiver chain instead of typing its last segment', () => {
@@ -385,5 +385,89 @@ suite('resolveChainRootType', () => {
 		const record = analyzeSource(text, '/tmp/Second.groovy').callSites.find(callSite => callSite.methodName === 'isFinished');
 		assert.strictEqual(record?.receiverRootType, 'Second');
 		assert.deepStrictEqual(record?.receiverPath, ['order', 'status']);
+	});
+});
+
+suite('analyzeSource — calls the extractor used to misread', () => {
+	const calls = (text: string) => analyzeSource(text, '/tmp/Caller.groovy').callSites.map(record => `${record.receiverName ?? '-'}.${record.methodName}`);
+
+	test('indexes method pointers as calls on their receiver', () => {
+		assert.deepStrictEqual(calls('def run() {\n    items.each(widgetService.&rename)\n}').filter(call => call.endsWith('rename')), ['widgetService.rename']);
+	});
+
+	test('treats a qualified constructor call as a call of the class', () => {
+		assert.deepStrictEqual(calls('def w = new com.acme.Widget()'), ['-.Widget']);
+	});
+
+	test('keeps a call after a direct field access and a URL mapping call with a string argument', () => {
+		assert.deepStrictEqual(calls('items[0].@attributes.keySet()\nget "/bills"(controller: "bill")'), ['attributes.keySet', '-.get']);
+	});
+
+	test('skips annotations with dotted names and Spock feature names', () => {
+		const text = '@groovy.transform.TypeChecked(extensions = "x")\nclass Spec {\n    def "creates a widget"() {\n        String "other"()\n    }\n}';
+		assert.deepStrictEqual(calls(text), []);
+	});
+
+	test('types variables declared with var, a qualified new and a second declarator', () => {
+		const text = [
+			'class Caller {',
+			'    def run() {',
+			'        var first = new com.acme.Widget()',
+			'        Widget a = build(), b = other()',
+			'        first.save()',
+			'        b.save()',
+			'    }',
+			'}'
+		].join('\n');
+		const saves = analyzeSource(text, '/tmp/Caller.groovy').callSites.filter(record => record.methodName === 'save');
+		assert.deepStrictEqual(saves.map(record => record.receiverType), ['Widget', 'Widget']);
+	});
+
+	test('does not type an untyped parameter after a typed one', () => {
+		const text = 'class Caller {\n    def run(Order order, status) {\n        status.save()\n    }\n}';
+		assert.strictEqual(analyzeSource(text, '/tmp/Caller.groovy').callSites.find(record => record.methodName === 'save')?.receiverType, undefined);
+	});
+});
+
+suite('receiverBefore, receiverChain and receiverAt', () => {
+	const at = (text: string, word: string) => text.indexOf(word);
+
+	test('reads the receiver before a dot, on the same or the previous line', () => {
+		const text = 'fooService\n    .findType(1)\nbar?.run()';
+		assert.deepStrictEqual(receiverBefore(text, at(text, 'findType')), { kind: 'name', name: 'fooService', offset: 0 });
+		assert.deepStrictEqual(receiverBefore(text, at(text, 'run')), { kind: 'name', name: 'bar', offset: at(text, 'bar') });
+		assert.strictEqual(receiverBefore(text, 0), undefined);
+	});
+
+	test('reads the segments of a property chain and marks a chain after a call as opaque', () => {
+		const text = 'order.buyer?.address.format()\nfind().first.name()';
+		assert.deepStrictEqual(receiverChain(text, at(text, 'address'), 'address'), ['order', 'buyer', 'address']);
+		assert.deepStrictEqual(receiverAt(text, at(text, 'format')), { kind: 'name', name: 'address', chain: ['order', 'buyer', 'address'] });
+		assert.deepStrictEqual(receiverAt(text, at(text, 'name()')), { kind: 'opaque' });
+		assert.deepStrictEqual(receiverAt(text, 0), { kind: 'none' });
+	});
+});
+
+suite('analyzeSource and parseDocumentSymbols — Java sources', () => {
+	const text = [
+		'package a;',
+		'import b.K;',
+		'public class J extends K implements L {',
+		'    private final Service service;',
+		'    public J(Service service) { this.service = service; }',
+		'    public static void main(String[] args) {',
+		'        new J(null).service.run();',
+		'        K.helper(args);',
+		'    }',
+		'}'
+	].join('\n');
+
+	test('reads the class, constructor, method and calls of a Java file', () => {
+		const symbols = parseDocumentSymbols(text, '/tmp/J.java');
+		assert.deepStrictEqual(symbols.classes.map(cls => [cls.fqn, cls.extendsTypes, cls.implementsTypes]), [['a.J', ['K'], ['L']]]);
+		assert.deepStrictEqual(symbols.methods.map(method => method.name), ['main']);
+		assert.deepStrictEqual(symbols.constructors.map(constructor => constructor.line), [4]);
+		const calls = analyzeSource(text, '/tmp/J.java').callSites.map(record => `${record.receiverKind ?? record.receiverName ?? '-'}.${record.methodName}`);
+		assert.deepStrictEqual(calls.filter(call => call.endsWith('run') || call.endsWith('helper')), ['service.run', 'K.helper']);
 	});
 });

@@ -1,11 +1,10 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { ClassIndexStore } from '../../groovy/class_index_store';
 import { resolveDefinitions } from '../../groovy/definition_resolver';
 import { GrailsArtifactIndex, indexGroovyFile } from '../../groovy/grails_artifact_index';
-import { candidateClassNamesForReceiver, serviceBeanToClassName } from '../../groovy/service_bean';
-import { findMethodInClassHierarchy, findMethodInText, listMethodsInClassHierarchy, parseTypeDeclaration, preferReferencedEntries } from '../../groovy/method_navigation_logic';
 import { buildImportMap, resolveSimpleTypeName } from '../../groovy/type_resolver';
 import { indexWorkspaceDocument } from '../../groovy/workspace_symbol_index';
 import { excludePosition } from '../../groovy/usage_lookup_logic';
@@ -51,29 +50,6 @@ function buildContext(
 		artifactIndex
 	});
 }
-
-suite('service_bean', () => {
-	test('maps widgetService to WidgetService', () => {
-		assert.strictEqual(serviceBeanToClassName('widgetService'), 'WidgetService');
-		assert.deepStrictEqual(candidateClassNamesForReceiver('widget'), ['Widget']);
-	});
-});
-
-suite('method_navigation_logic', () => {
-	test('parses extends/implements with generics', () => {
-		const parsed = parseTypeDeclaration(`
-class OrderRepository implements Repository<Order, OrderRepository> {
-}
-`);
-		assert.ok(parsed);
-		assert.deepStrictEqual(parsed!.parents, ['Repository']);
-	});
-
-	test('finds def and typed method declarations', () => {
-		const source = loadFixture('WidgetService.groovy');
-		assert.ok(findMethodInText(source, 'save').length > 0);
-	});
-});
 
 suite('definition_resolver', () => {
 	test('go to type definition for imported Widget', () => {
@@ -289,41 +265,6 @@ suite('type_resolver', () => {
 	});
 });
 
-suite('findMethodInClassHierarchy — same-named supertypes', () => {
-	const sources: Record<string, string> = {
-		'/w/debit/BaseRequestBuilder.groovy': 'package adyen.debit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n}',
-		'/w/credit/BaseRequestBuilder.groovy': 'package adyen.credit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n}',
-		'/w/debit/AuthoriseRequestBuilder.groovy': 'package adyen.debit\nclass AuthoriseRequestBuilder extends BaseRequestBuilder {\n}',
-		'/w/other/PixRequestBuilder.groovy': 'package other\nimport adyen.debit.BaseRequestBuilder\nclass PixRequestBuilder extends BaseRequestBuilder {\n}'
-	};
-	const readFile = (filePath: string) => sources[filePath];
-	const findEntries = (className: string) => Object.keys(sources)
-		.filter(filePath => filePath.endsWith(`/${className}.groovy`))
-		.sort((a, b) => a.includes('credit') ? -1 : b.includes('credit') ? 1 : 0)
-		.map(filePath => ({ filePath }));
-	const lookup = (className: string, referencing?: string) =>
-		findMethodInClassHierarchy(readFile, findEntries, className, 'buildAmount', new Set(), 0, referencing).map(location => location.filePath);
-
-	test('picks the supertype in the same package as the subclass', () => {
-		assert.deepStrictEqual(lookup('AuthoriseRequestBuilder'), ['/w/debit/BaseRequestBuilder.groovy']);
-	});
-
-	test('picks the supertype named by an explicit import', () => {
-		assert.deepStrictEqual(lookup('PixRequestBuilder'), ['/w/debit/BaseRequestBuilder.groovy']);
-	});
-
-	test('goes from super.method() to the supertype in the same package', () => {
-		const source = 'package com.example.fixture.domain\nclass SpecialWidget extends Widget {\n    void rename(String value) {\n        super.rename(value)\n    }\n}';
-		const lineText = source.split('\n')[3];
-		const targets = buildContext(source, path.join(fixturesRoot, 'SpecialWidget.groovy'), 3, 'rename', lineText.indexOf('rename'));
-		assert.deepStrictEqual(targets.map(target => path.basename(target.uri)), ['Widget.groovy']);
-	});
-
-	test('picks the class the referencing file refers to when the name itself is ambiguous', () => {
-		assert.deepStrictEqual(lookup('BaseRequestBuilder', 'package adyen.debit\nclass X {\n}'), ['/w/debit/BaseRequestBuilder.groovy']);
-	});
-});
-
 suite('enum constants and static fields', () => {
 	const kindPath = path.join(fixturesRoot, 'WidgetKind.groovy');
 	const kindSource = loadFixture('WidgetKind.groovy');
@@ -461,46 +402,44 @@ suite('local variables and parameters', () => {
 	});
 });
 
-suite('listMethodsInClassHierarchy — same-named classes and supertypes', () => {
-	const sources: Record<string, string> = {
-		'/w/credit/BaseRequestBuilder.groovy': 'package adyen.credit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n    Map buildInstallments() {\n    }\n}',
-		'/w/debit/BaseRequestBuilder.groovy': 'package adyen.debit\nclass BaseRequestBuilder {\n    Map buildAmount() {\n    }\n    String buildReference() {\n    }\n}',
-		'/w/credit/AuthoriseRequestBuilder.groovy': 'package adyen.credit\nclass AuthoriseRequestBuilder extends BaseRequestBuilder {\n    Map build() {\n    }\n}',
-		'/w/debit/AuthoriseRequestBuilder.groovy': 'package adyen.debit\nclass AuthoriseRequestBuilder extends BaseRequestBuilder {\n    Map build() {\n    }\n}'
-	};
-	const readFile = (filePath: string) => sources[filePath];
-	const findEntries = (className: string) => Object.keys(sources)
-		.filter(filePath => filePath.endsWith(`/${className}.groovy`))
-		.sort()
-		.map(filePath => ({ filePath }));
-	const names = (referencing?: string) =>
-		listMethodsInClassHierarchy(readFile, findEntries, 'AuthoriseRequestBuilder', new Set(), 0, referencing).map(method => method.name);
-
-	test('lists the inherited methods of the class the document refers to', () => {
-		assert.deepStrictEqual(names('package adyen\nimport adyen.debit.AuthoriseRequestBuilder\nclass X {\n}'), ['build', 'buildAmount', 'buildReference']);
-	});
-
-	test('resolves each same-named class against its own supertype when the document does not pick one', () => {
-		assert.deepStrictEqual(names(), ['build', 'buildAmount', 'buildInstallments', 'buildReference']);
+suite('super calls', () => {
+	test('goes from super.method() to the supertype in the same package', () => {
+		const source = 'package com.example.fixture.domain\nclass SpecialWidget extends Widget {\n    void rename(String value) {\n        super.rename(value)\n    }\n}';
+		const lineText = source.split('\n')[3];
+		const targets = buildContext(source, path.join(fixturesRoot, 'SpecialWidget.groovy'), 3, 'rename', lineText.indexOf('rename'));
+		assert.deepStrictEqual(targets.map(target => path.basename(target.uri)), ['Widget.groovy']);
 	});
 });
 
-suite('preferReferencedEntries', () => {
+suite('types declared in another file than their name', () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'code-groovy-types-'));
 	const files: Record<string, string> = {
-		'/a/Widget.groovy': 'package a\nclass Widget {}',
-		'/b/Widget.groovy': 'package b\nclass Widget {}'
+		'Holder.groovy': 'package a\nclass Holder {\n\tenum Status {\n\t\tOPEN,\n\t\tCLOSED\n\t}\n}\n',
+		'Mismatch.groovy': 'package a\nenum RealName {\n\tONE,\n\tTWO\n}\n'
 	};
-	const entries = [{ filePath: '/a/Widget.groovy' }, { filePath: '/b/Widget.groovy' }];
-	const prefer = (content: string) => preferReferencedEntries(entries, 'Widget', filePath => files[filePath], content).map(entry => entry.filePath);
+	const classStore = new ClassIndexStore();
+	for (const [name, text] of Object.entries(files)) {
+		const filePath = path.join(root, name);
+		fs.writeFileSync(filePath, text);
+		classStore.add(indexWorkspaceDocument(text, filePath).types);
+	}
+	const caller = 'package a\nclass Caller {\n\tvoid run() {\n\t\tdef s = Holder.Status.OPEN\n\t\tdef r = RealName.TWO\n\t}\n}\n';
+	const at = (line: number, word: string) => {
+		const wordStart = caller.split('\n')[line].indexOf(word);
+		return resolveDefinitions({
+			documentText: caller,
+			line,
+			character: wordStart,
+			word,
+			wordStart,
+			sourcePath: path.join(root, 'Caller.groovy'),
+			classStore,
+			artifactIndex: new GrailsArtifactIndex()
+		}).map(target => `${path.basename(target.uri)}:${target.line}:${target.column}`);
+	};
 
-	test('follows an explicit import, also when it has an alias', () => {
-		assert.deepStrictEqual(prefer('package c\nimport b.Widget\nclass C {}'), ['/b/Widget.groovy']);
-		assert.deepStrictEqual(prefer('package c\nimport b.Widget as W\nclass C {}'), ['/b/Widget.groovy']);
-	});
-
-	test('falls back to the same package and then to wildcard imports', () => {
-		assert.deepStrictEqual(prefer('package a;\nclass C {}'), ['/a/Widget.groovy']);
-		assert.deepStrictEqual(prefer('package c\nimport b.*\nclass C {}'), ['/b/Widget.groovy']);
-		assert.deepStrictEqual(prefer('package c\nclass C {}'), ['/a/Widget.groovy', '/b/Widget.groovy']);
+	test('finds the constant of a nested enum and of an enum whose file has another name', () => {
+		assert.deepStrictEqual(at(3, 'OPEN'), ['Holder.groovy:3:2']);
+		assert.deepStrictEqual(at(4, 'TWO'), ['Mismatch.groovy:3:1']);
 	});
 });

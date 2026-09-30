@@ -1,7 +1,8 @@
 import { simpleNameFromFqn } from './class_index_store';
-import { MAX_HIERARCHY_DEPTH, parsePackageName } from './class_parser';
-import { preferReferencedEntries } from './method_navigation_logic';
-import { braceDepthAtLineStarts, closingBraceLine, escapeRegExp, maskNonCode, parenDepthAtLineStarts } from './text_scan_logic';
+import { isGroovyKeyword } from './groovy_keywords';
+import { classNameForBean } from './service_bean';
+import { parsePackageName } from './class_parser';
+import { closingBraceLine, depthsAtLineStarts, escapeRegExp, lineStartOffsets, maskNonCode, scanTopLevel, splitLines } from './text_scan_logic';
 
 export interface ParsedMethod {
 	name: string;
@@ -58,13 +59,22 @@ export interface ParsedDocumentSymbols {
 	constructors: ParsedConstructor[];
 }
 
-const CLASS_LINE_RE =
-	/^\s*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed)\s+)*(class|interface|trait|enum)\s+([A-Za-z_]\w*)(?:\s*<[^{]*?>)?(?:\s+extends\s+(.+?))?(?:\s+implements\s+(.+?))?\s*(?:\{.*)?$/;
+const IDENTIFIER = '[A-Za-z_\\u00C0-\\uFFFF][\\w\\u00C0-\\uFFFF]*';
+const ANNOTATIONS = '(?:@[\\w.]+(?:\\([^)]*\\))?\\s+)*';
+const TYPE_MODIFIERS = '(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed)\\s+)*';
+const CLASS_START_RE = new RegExp(`^\\s*${ANNOTATIONS}${TYPE_MODIFIERS}(?:class|interface|trait|enum)\\s+${IDENTIFIER}`);
+const CLASS_LINE_RE = new RegExp(
+	`^\\s*${ANNOTATIONS}${TYPE_MODIFIERS}(class|interface|trait|enum)\\s+(${IDENTIFIER})(?:\\s*<[^{]*?>)?(?:\\s+extends\\s+([^{]+?))?(?:\\s+implements\\s+([^{]+?))?\\s*(?:\\{.*)?$`,
+	'd'
+);
+const MAX_HEADER_LINES = 6;
 const MAX_DECLARATION_LINE_LENGTH = 2000;
-const MODIFIER = '(?:public|protected|private|static|final|abstract|synchronized)';
-const RETURN_TYPE = '(?:def|(?:void|boolean|byte|char|short|int|long|float|double|[A-Z][\\w.]*(?:<[^()]*>)?)(?:\\[\\])*)';
+const MODIFIER = '(?:public|protected|private|static|final|abstract|synchronized|default)';
+const TYPE_PARAMETERS = '(?:<[^()]*?>\\s+)?';
+const RETURN_TYPE = '(?:def|(?:void|boolean|byte|char|short|int|long|float|double|(?:[a-z_]\\w*\\.)*[A-Z][\\w.]*(?:<[^()]*>)?)(?:\\[\\])*)';
 const METHOD_LINE_RE = new RegExp(
-	`^\\s*(?:@[\\w.]+(?:\\([^)]*\\))?\\s+)*(?:(?:${MODIFIER}\\s+)*${RETURN_TYPE}|(?:${MODIFIER}\\s+)*(?:public|protected|private|static|final|abstract|synchronized))\\s+([A-Za-z_]\\w*)\\s*\\(`
+	`^\\s*${ANNOTATIONS}(?:(?:${MODIFIER}\\s+)*${TYPE_PARAMETERS}${RETURN_TYPE}|(?:${MODIFIER}\\s+)*${MODIFIER})\\s+(${IDENTIFIER})\\s*\\(`,
+	'd'
 );
 const FIELD_LINE_RE =
 	/^\s*(?:(?:public|protected|private|static|final)\s+)*([A-Z][A-Za-z0-9_]*)\s+([a-zA-Z_]\w*)\s*(?:=|;|$)/;
@@ -85,15 +95,15 @@ function splitTypeList(raw: string | undefined): string[] {
 
 export function parseDocumentSymbols(text: string, sourcePath?: string, maskedText = maskNonCode(text)): ParsedDocumentSymbols {
 	const packageName = parsePackageName(text);
-	const lines = maskedText.split('\n');
-	const originalLines = text.split('\n');
+	const lines = splitLines(maskedText);
+	const originalLines = splitLines(text);
+	const lineStarts = lineStartOffsets(maskedText);
 	const classes: ParsedClassSymbol[] = [];
 	const methods: ParsedMethod[] = [];
 	const fields: ParsedField[] = [];
-	const depths = braceDepthAtLineStarts(maskedText);
-	const parenDepths = parenDepthAtLineStarts(maskedText);
+	const { braces: depths, parens: parenDepths } = depthsAtLineStarts(maskedText);
 	const isClassMemberLine = (line: number) =>
-		parenDepths[line] === 0 && depths[line] === (openClasses[openClasses.length - 1]?.bodyDepth ?? 1);
+		openClasses.length > 0 && parenDepths[line] === 0 && depths[line] === openClasses[openClasses.length - 1].bodyDepth;
 	const scriptClassFqn = packageName ? `${packageName}.${inferScriptClassName(sourcePath)}` : inferScriptClassName(sourcePath);
 	const openClasses: ParsedClassSymbol[] = [];
 	const enumConstants: ParsedEnumConstant[] = [];
@@ -101,12 +111,10 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 	const constructorPatterns = new Map<ParsedClassSymbol, RegExp>();
 	let enumReadingConstants: ParsedClassSymbol | undefined;
 	let currentClassFqn = scriptClassFqn;
-	let lineOffset = 0;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		const lineStart = lineOffset;
-		lineOffset += line.length + 1;
+		const lineStart = lineStarts[i];
 		while (openClasses.length > 0 && openClasses[openClasses.length - 1].endLine < i) {
 			openClasses.pop();
 			currentClassFqn = openClasses[openClasses.length - 1]?.fqn ?? scriptClassFqn;
@@ -116,12 +124,13 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 			continue;
 		}
 
-		const classMatch = line.match(CLASS_LINE_RE);
+		const classMatch = CLASS_START_RE.test(line) ? matchClassHeader(lines, i) : undefined;
 		if (classMatch) {
 			const kind = classMatch[1] as ParsedClassSymbol['kind'];
 			const simpleName = classMatch[2];
-			const fqn = packageName ? `${packageName}.${simpleName}` : simpleName;
-			const column = line.indexOf(simpleName);
+			const enclosing = openClasses[openClasses.length - 1];
+			const fqn = enclosing ? `${enclosing.fqn}.${simpleName}` : packageName ? `${packageName}.${simpleName}` : simpleName;
+			const column = matchIndices(classMatch)[2][0];
 			const symbol: ParsedClassSymbol = {
 				simpleName,
 				fqn,
@@ -139,11 +148,20 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 			openClasses.push(symbol);
 			constructorPatterns.set(symbol, constructorPattern(simpleName));
 			currentClassFqn = fqn;
+			const bodyStart = line.indexOf('{', column);
+			let membersFrom = bodyStart >= 0 ? bodyStart + 1 : -1;
 			if (kind === 'enum') {
-				const bodyStart = line.indexOf('{', column);
 				enumReadingConstants = symbol;
-				if (bodyStart >= 0 && readEnumConstants(line, originalLines[i] ?? line, bodyStart + 1, i, symbol, enumConstants)) {
+				const constantsEnd = bodyStart >= 0 ? readEnumConstants(line, originalLines[i] ?? line, bodyStart + 1, i, symbol, enumConstants) : undefined;
+				if (constantsEnd !== undefined) {
 					enumReadingConstants = undefined;
+				}
+				membersFrom = constantsEnd ?? -1;
+			}
+			if (membersFrom >= 0) {
+				const member = METHOD_LINE_RE.exec(line.slice(membersFrom));
+				if (member && !isGroovyKeyword(member[1])) {
+					methods.push({ name: member[1], line: i, column: membersFrom + matchIndices(member)[1][0], classFqn: fqn, sourcePath });
 				}
 			}
 			continue;
@@ -172,7 +190,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 					|| constructorColumn !== undefined) {
 					enumReadingConstants = undefined;
 				} else {
-					if (readEnumConstants(line, originalLines[i] ?? line, 0, i, owner, enumConstants)) {
+					if (readEnumConstants(line, originalLines[i] ?? line, 0, i, owner, enumConstants) !== undefined) {
 						enumReadingConstants = undefined;
 					}
 					continue;
@@ -180,15 +198,18 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 			}
 		}
 
-		const methodMatch = line.match(METHOD_LINE_RE);
+		if (constructorColumn !== undefined) {
+			continue;
+		}
+
+		const methodMatch = METHOD_LINE_RE.exec(line);
 		if (methodMatch) {
 			const name = methodMatch[1];
-			if (!isReservedName(name)) {
-				const column = line.indexOf(name);
+			if (!isGroovyKeyword(name)) {
 				methods.push({
 					name,
 					line: i,
-					column: column >= 0 ? column : 0,
+					column: matchIndices(methodMatch)[1][0],
 					classFqn: currentClassFqn,
 					sourcePath
 				});
@@ -199,7 +220,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 		const serviceMatch = line.match(SERVICE_INJECT_RE);
 		if (serviceMatch) {
 			const serviceName = serviceMatch[1];
-			const typeName = serviceNameToClassName(serviceName);
+			const typeName = classNameForBean(serviceName);
 			const column = line.indexOf(serviceName);
 			fields.push({
 				name: serviceName,
@@ -249,54 +270,6 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 	return { packageName, classes, methods, fields, enumConstants, constructors };
 }
 
-export interface FieldLocation {
-	filePath: string;
-	line: number;
-	column: number;
-}
-
-export function findFieldInClassHierarchy(
-	readFile: (filePath: string) => string | undefined,
-	findEntries: (className: string) => Array<{ filePath: string }>,
-	className: string,
-	fieldName: string,
-	referencingContent?: string,
-	visited: Set<string> = new Set(),
-	depth = 0
-): FieldLocation[] {
-	if (!className || depth > MAX_HIERARCHY_DEPTH) {
-		return [];
-	}
-
-	for (const entry of preferReferencedEntries(findEntries(className), className, readFile, referencingContent)) {
-		if (visited.has(entry.filePath)) {
-			continue;
-		}
-		visited.add(entry.filePath);
-		const content = readFile(entry.filePath);
-		if (!content) {
-			continue;
-		}
-		const parsed = parseDocumentSymbols(content, entry.filePath);
-		const field = parsed.fields.find(candidate => candidate.classMember && candidate.name === fieldName
-			&& simpleNameFromFqn(candidate.classFqn) === className);
-		if (field) {
-			return [{ filePath: entry.filePath, line: field.line, column: field.column }];
-		}
-
-		const ownClass = parsed.classes.find(cls => cls.simpleName === className);
-		const parents = [...(ownClass?.extendsTypes ?? []), ...(ownClass?.implementsTypes ?? [])];
-		for (const parent of parents) {
-			const inherited = findFieldInClassHierarchy(readFile, findEntries, simpleNameFromFqn(parent), fieldName, content, visited, depth + 1);
-			if (inherited.length > 0) {
-				return inherited;
-			}
-		}
-	}
-
-	return [];
-}
-
 export function constructorDeclarations(symbols: ParsedDocumentSymbols, sourcePath: string): ParsedMethod[] {
 	return symbols.constructors.map(constructor => ({
 		name: simpleNameFromFqn(constructor.classFqn),
@@ -307,13 +280,6 @@ export function constructorDeclarations(symbols: ParsedDocumentSymbols, sourcePa
 	}));
 }
 
-export function serviceNameToClassName(serviceName: string): string {
-	if (!serviceName.endsWith('Service') || serviceName.length <= 'Service'.length) {
-		return serviceName;
-	}
-	const prefix = serviceName.slice(0, -'Service'.length);
-	return prefix.charAt(0).toUpperCase() + prefix.slice(1) + 'Service';
-}
 
 function readEnumConstants(
 	line: string,
@@ -322,14 +288,10 @@ function readEnumConstants(
 	lineNo: number,
 	owner: ParsedClassSymbol,
 	constants: ParsedEnumConstant[]
-): boolean {
-	const segment = line.slice(from);
-	const terminator = topLevelIndexOf(segment, ';');
-	const bodyEnd = enclosingBlockEnd(segment);
-	const ends = [terminator, bodyEnd].filter(index => index >= 0);
-	const constantsText = ends.length > 0 ? segment.slice(0, Math.min(...ends)) : segment;
+): number | undefined {
+	const scan = scanTopLevel(line.slice(from));
 	let offset = 0;
-	for (const part of splitTopLevel(constantsText)) {
+	for (const part of scan.parts) {
 		const match = part.match(/^\s*(?:@[\w.]+(?:\([^)]*\))?\s+)*([A-Za-z_]\w*)\s*(?=\(|\{|\}|$)/);
 		if (match) {
 			const column = from + offset + part.indexOf(match[1]);
@@ -343,57 +305,26 @@ function readEnumConstants(
 		}
 		offset += part.length + 1;
 	}
-	return ends.length > 0;
+	if (scan.terminator >= 0) {
+		return from + scan.terminator + 1;
+	}
+	return scan.blockEnd >= 0 ? -1 : undefined;
 }
 
-function splitTopLevel(text: string): string[] {
-	const parts: string[] = [];
-	let depth = 0;
-	let start = 0;
-	for (let i = 0; i < text.length; i++) {
-		const ch = text[i];
-		if (ch === '(' || ch === '{' || ch === '[') {
-			depth++;
-		} else if (ch === ')' || ch === '}' || ch === ']') {
-			depth = Math.max(0, depth - 1);
-		} else if (ch === ',' && depth === 0) {
-			parts.push(text.slice(start, i));
-			start = i + 1;
+function matchClassHeader(lines: string[], start: number): RegExpExecArray | undefined {
+	let header = lines[start];
+	for (let next = start + 1; !header.includes('{') && next < lines.length && next <= start + MAX_HEADER_LINES; next++) {
+		const continuation = lines[next].trim();
+		if (!/^(?:extends|implements|,|\{|[A-Za-z_][\w.]*\s*(?:<|,|\{|$))/.test(continuation)) {
+			break;
 		}
+		header += ' ' + lines[next];
 	}
-	parts.push(text.slice(start));
-	return parts;
+	return CLASS_LINE_RE.exec(header) ?? undefined;
 }
 
-function topLevelIndexOf(text: string, target: string): number {
-	let depth = 0;
-	for (let i = 0; i < text.length; i++) {
-		const ch = text[i];
-		if (ch === '(' || ch === '{' || ch === '[') {
-			depth++;
-		} else if (ch === ')' || ch === '}' || ch === ']') {
-			depth = Math.max(0, depth - 1);
-		} else if (ch === target && depth === 0) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-function enclosingBlockEnd(text: string): number {
-	let depth = 0;
-	for (let i = 0; i < text.length; i++) {
-		const ch = text[i];
-		if (ch === '(' || ch === '{' || ch === '[') {
-			depth++;
-		} else if (ch === ')' || ch === '}' || ch === ']') {
-			if (depth === 0 && ch === '}') {
-				return i;
-			}
-			depth = Math.max(0, depth - 1);
-		}
-	}
-	return -1;
+function matchIndices(match: RegExpExecArray): Array<[number, number]> {
+	return (match as RegExpExecArray & { indices: Array<[number, number]> }).indices;
 }
 
 function argumentCountAt(maskedLine: string, originalLine: string, afterName: number): number | undefined {
@@ -410,7 +341,7 @@ function argumentCountAt(maskedLine: string, originalLine: string, afterName: nu
 			depth--;
 			if (depth === 0) {
 				const inside = originalLine.slice(openParen + 1, i);
-				return inside.trim() ? splitTopLevel(maskedLine.slice(openParen + 1, i)).length : 0;
+				return inside.trim() ? scanTopLevel(maskedLine.slice(openParen + 1, i), '').parts.length : 0;
 			}
 		}
 	}
@@ -432,8 +363,4 @@ function inferScriptClassName(sourcePath?: string): string {
 	}
 	const base = sourcePath.replace(/\\/g, '/').split('/').pop() ?? 'Script';
 	return base.replace(/\.(groovy|java)$/, '');
-}
-
-function isReservedName(name: string): boolean {
-	return name === 'if' || name === 'for' || name === 'while' || name === 'switch';
 }

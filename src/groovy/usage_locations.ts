@@ -9,7 +9,7 @@ const CONCURRENCY = 64;
 export function wordScanner(token?: vscode.CancellationToken): (word: string, scan: TextScan) => Promise<UsageLocation[]> {
 	return (word, scan) => findWordOccurrences(
 		word,
-		scan.scope === 'workspace' ? scan.receiverFieldName : undefined,
+		scan.receiverFieldName,
 		token,
 		scan.scope === 'files' ? scan.files : undefined
 	);

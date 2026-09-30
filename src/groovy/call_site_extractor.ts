@@ -1,5 +1,7 @@
 import { ParsedClassSymbol, ParsedDocumentSymbols, ParsedMethod, parseDocumentSymbols } from './symbol_parser';
-import { braceDepthAtLineStarts, isImportLine, maskNonCode, parenDepthAtLineStarts } from './text_scan_logic';
+import { isGroovyKeyword } from './groovy_keywords';
+import { intern } from './string_pool';
+import { depthsAtLineStarts, isImportLine, lineStartOffsets, maskNonCode, splitLines } from './text_scan_logic';
 
 export interface CallSiteRecord {
 	methodName: string;
@@ -26,34 +28,21 @@ interface ReceiverDeclaration {
 	line: number;
 }
 
-type ReceiverTypeResolver = (receiverName: string, line: number) => string | undefined;
+export type ReceiverTypeResolver = (receiverName: string, line: number) => string | undefined;
 
 export type ReceiverBefore = { kind: 'name'; name: string; offset: number } | { kind: 'chain' };
 
 const CALL_SITE_RE = /\b(?:([A-Za-z_]\w*)\s*[?*]?\.\s*)?([A-Za-z_]\w*)\s*([({])/g;
 const TYPED_DECLARATION_RE = /\b([A-Z]\w*)(?:<[^()]*?>)?(?:\[\])*\s+([a-z_]\w*)(?=\s*(?:[=,;)]|->|:(?!:)|$)|\s+in\b)/g;
 const DEF_DECLARATION_RE =
-	/\bdef\s+([a-z_]\w*)\s*=\s*(?:new\s+([A-Z]\w*)|([A-Z]\w*)\s*\.\s*(?:get|read|load|lock|find|findWhere|findBy\w+|findOrCreate\w+|findOrSave\w+)\s*\()?/g;
+	/\b(?:def|var)\s+([a-z_]\w*)\s*=\s*(?:new\s+(?:[a-z_]\w*\s*\.\s*)*([A-Z]\w*)|([A-Z]\w*)\s*\.\s*(?:get|read|load|lock|find|findWhere|findBy\w+|findOrCreate\w+|findOrSave\w+)\s*\()?/g;
 const CLOSURE_PARAMS_RE = /\{\s*([a-z_]\w*(?:\s*,\s*[a-z_]\w*)*)\s*->/g;
 const TYPE_MENTION_RE = /\b[A-Z]\w*/g;
-const LINE_BREAK_RE = /\r\n|\r|\n/g;
+const CONSTANT_MENTION_RE = /^[A-Z][A-Z0-9]*_[A-Z0-9_]*$/;
 
-const RESERVED_WORDS = new Set([
-	'if', 'else', 'for', 'while', 'switch', 'catch', 'synchronized', 'return',
-	'throw', 'assert', 'new', 'in', 'instanceof', 'super', 'this'
-]);
-
-const internPool = new Map<string, string>();
-
-export function intern(value: string): string {
-	const pooled = internPool.get(value);
-	if (pooled !== undefined) {
-		return pooled;
-	}
-	const copy = Buffer.from(value, 'utf8').toString('utf8');
-	internPool.set(copy, copy);
-	return copy;
-}
+const METHOD_POINTER_RE = /\b([A-Za-z_]\w*)\s*\.&\s*([A-Za-z_]\w*)/g;
+const QUALIFIED_NEW_BEFORE_RE = /\bnew\s+(?:[A-Za-z_]\w*\s*\.\s*)+$/;
+const ANNOTATION_BEFORE_RE = /(?<![.\w])@\s*(?:[A-Za-z_]\w*\s*\.\s*)*$/;
 
 export function analyzeSource(
 	text: string,
@@ -62,8 +51,8 @@ export function analyzeSource(
 	maskedText = maskNonCode(text)
 ): SourceAnalysis {
 	const parsed = symbols ?? parseDocumentSymbols(text, sourcePath, maskedText);
-	const lines = maskedText.split(LINE_BREAK_RE);
-	const originalLines = text.split(LINE_BREAK_RE);
+	const lines = splitLines(maskedText);
+	const originalLines = splitLines(text);
 	const lineStarts = lineStartOffsets(maskedText);
 	const owners = ownerClassByLine(parsed.classes, lines.length);
 	const resolveType = createReceiverTypeResolver(lines, maskedText, parsed, owners);
@@ -74,13 +63,18 @@ export function analyzeSource(
 		const line = lines[lineNo];
 		if (!isImportLine(originalLines[lineNo] ?? '') && !/^\s*package\s/.test(line)) {
 			for (const mention of line.match(TYPE_MENTION_RE) ?? []) {
-				typeMentions.add(intern(mention));
+				if (!CONSTANT_MENTION_RE.test(mention)) {
+					typeMentions.add(intern(mention));
+				}
 			}
+		}
+		if (line.includes('.&')) {
+			collectMethodPointers(line, lineNo, sourcePath, owners[lineNo]?.fqn, resolveType, callSites);
 		}
 		if (!line.includes('(') && !line.includes('{')) {
 			continue;
 		}
-		const ownerClass = owners[lineNo]?.simpleName;
+		const ownerClass = owners[lineNo]?.fqn;
 		CALL_SITE_RE.lastIndex = 0;
 		let match: RegExpExecArray | null;
 		while ((match = CALL_SITE_RE.exec(line)) !== null) {
@@ -92,10 +86,22 @@ export function analyzeSource(
 			if (delimiter === '{' && !receiverName && !opaqueChain) {
 				continue;
 			}
-			if (RESERVED_WORDS.has(methodName)) {
+			if (isGroovyKeyword(methodName) || isCalledThroughString(originalLines[lineNo] ?? '', methodName, methodStart + methodName.length, match.index + match[0].length - 1)) {
 				continue;
 			}
-			if (!receiverName && !opaqueChain && line.charAt(methodStart - 1) === '@') {
+			const before = line.slice(0, capturedReceiver !== undefined ? match.index : methodStart);
+			if (ANNOTATION_BEFORE_RE.test(before)) {
+				continue;
+			}
+			if (capturedReceiver !== undefined && QUALIFIED_NEW_BEFORE_RE.test(line.slice(0, methodStart))) {
+				callSites.push({
+					methodName: intern(methodName),
+					receiverName: undefined,
+					...(ownerClass ? { ownerClass: intern(ownerClass) } : {}),
+					sourcePath,
+					line: lineNo,
+					column: methodStart
+				});
 				continue;
 			}
 			const receiverOffset = lineStarts[lineNo] + match.index;
@@ -127,21 +133,87 @@ export function analyzeSource(
 	return { callSites, typeMentions: [...typeMentions] };
 }
 
-export function resolveReceiverType(text: string, line: number, receiverName: string): string | undefined {
-	return documentTypeContext(text).resolveType(receiverName, line);
+function collectMethodPointers(
+	line: string,
+	lineNo: number,
+	sourcePath: string,
+	ownerClass: string | undefined,
+	resolveType: ReceiverTypeResolver,
+	callSites: CallSiteRecord[]
+): void {
+	METHOD_POINTER_RE.lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = METHOD_POINTER_RE.exec(line)) !== null) {
+		const [, receiverName, methodName] = match;
+		const receiverType = /^[a-z_]/.test(receiverName) && receiverName !== 'this' ? resolveType(receiverName, lineNo) : undefined;
+		callSites.push({
+			methodName: intern(methodName),
+			receiverName: intern(receiverName),
+			...(receiverType ? { receiverType: intern(receiverType) } : {}),
+			...(ownerClass ? { ownerClass: intern(ownerClass) } : {}),
+			sourcePath,
+			line: lineNo,
+			column: match.index + match[0].length - methodName.length,
+			receiverColumn: match.index
+		});
+	}
+}
+
+function isCalledThroughString(originalLine: string, methodName: string, nameEnd: number, delimiterIndex: number): boolean {
+	return /^[A-Z]/.test(methodName) && originalLine.slice(nameEnd, delimiterIndex).trim().length > 0;
+}
+
+export interface DocumentAnalysis {
+	text: string;
+	sourcePath?: string;
+	maskedText: string;
+	maskedLines: string[];
+	lineStarts: number[];
+	symbols: ParsedDocumentSymbols;
+	owners: Array<ParsedClassSymbol | undefined>;
+	resolveType: ReceiverTypeResolver;
+}
+
+const ANALYSIS_CACHE_SIZE = 32;
+const analysisCache = new Map<string, DocumentAnalysis>();
+
+export function analyzeDocument(text: string, sourcePath?: string): DocumentAnalysis {
+	const key = sourcePath ?? '';
+	const cached = analysisCache.get(key);
+	if (cached && cached.text === text) {
+		analysisCache.delete(key);
+		analysisCache.set(key, cached);
+		return cached;
+	}
+	const maskedText = maskNonCode(text);
+	const symbols = parseDocumentSymbols(text, sourcePath, maskedText);
+	const maskedLines = splitLines(maskedText);
+	const owners = ownerClassByLine(symbols.classes, maskedLines.length);
+	const analysis: DocumentAnalysis = {
+		text,
+		sourcePath,
+		maskedText,
+		maskedLines,
+		lineStarts: lineStartOffsets(maskedText),
+		symbols,
+		owners,
+		resolveType: createReceiverTypeResolver(maskedLines, maskedText, symbols, owners)
+	};
+	analysisCache.delete(key);
+	analysisCache.set(key, analysis);
+	if (analysisCache.size > ANALYSIS_CACHE_SIZE) {
+		analysisCache.delete(analysisCache.keys().next().value as string);
+	}
+	return analysis;
+}
+
+export function resolveReceiverType(text: string, line: number, receiverName: string, sourcePath?: string): string | undefined {
+	return analyzeDocument(text, sourcePath).resolveType(receiverName, line);
 }
 
 export function resolveChainRootType(text: string, line: number, root: string, sourcePath?: string): string | undefined {
-	const { owners, resolveType } = documentTypeContext(text, sourcePath);
+	const { owners, resolveType } = analyzeDocument(text, sourcePath);
 	return chainRootType(root, line, owners, resolveType);
-}
-
-function documentTypeContext(text: string, sourcePath?: string): { owners: Array<ParsedClassSymbol | undefined>; resolveType: ReceiverTypeResolver } {
-	const maskedText = maskNonCode(text);
-	const parsed = parseDocumentSymbols(text, sourcePath, maskedText);
-	const lines = maskedText.split(LINE_BREAK_RE);
-	const owners = ownerClassByLine(parsed.classes, lines.length);
-	return { owners, resolveType: createReceiverTypeResolver(lines, maskedText, parsed, owners) };
 }
 
 export function excludeDeclarationCallSites(callSites: CallSiteRecord[], methods: ParsedMethod[]): CallSiteRecord[] {
@@ -194,6 +266,37 @@ export function receiverBefore(maskedText: string, offset: number): ReceiverBefo
 		return { kind: 'chain' };
 	}
 	return { kind: 'name', name: identifier, offset: i + 1 };
+}
+
+export type ReceiverAt =
+	| { kind: 'none' }
+	| { kind: 'opaque' }
+	| { kind: 'name'; name: string; chain?: string[] };
+
+export function receiverAt(maskedText: string, offset: number): ReceiverAt {
+	let i = skipWhitespaceBackward(maskedText, offset - 1);
+	if (maskedText[i] !== '.') {
+		return { kind: 'none' };
+	}
+	i--;
+	if (maskedText[i] === '?' || maskedText[i] === '*') {
+		i--;
+	}
+	i = skipWhitespaceBackward(maskedText, i);
+	const end = i + 1;
+	while (i >= 0 && /\w/.test(maskedText[i])) {
+		i--;
+	}
+	const name = maskedText.slice(i + 1, end);
+	if (!/^[A-Za-z_]\w*$/.test(name)) {
+		return { kind: 'opaque' };
+	}
+	const before = skipWhitespaceBackward(maskedText, i);
+	if (maskedText[before] !== '.') {
+		return { kind: 'name', name };
+	}
+	const chain = receiverChain(maskedText, i + 1, name);
+	return chain ? { kind: 'name', name, chain } : { kind: 'opaque' };
 }
 
 function positionAt(lineStarts: number[], fromLine: number, offset: number): { line: number; column: number } {
@@ -250,16 +353,6 @@ function skipWhitespaceBackward(text: string, index: number): number {
 	return i;
 }
 
-function lineStartOffsets(text: string): number[] {
-	const starts = [0];
-	LINE_BREAK_RE.lastIndex = 0;
-	let match: RegExpExecArray | null;
-	while ((match = LINE_BREAK_RE.exec(text)) !== null) {
-		starts.push(match.index + match[0].length);
-	}
-	return starts;
-}
-
 function createReceiverTypeResolver(
 	maskedLines: string[],
 	maskedText: string,
@@ -267,7 +360,8 @@ function createReceiverTypeResolver(
 	owners: Array<ParsedClassSymbol | undefined>
 ): ReceiverTypeResolver {
 	const declarations = collectReceiverDeclarations(maskedLines);
-	const scopeStarts = scopeStartByLine(maskedLines, braceDepthAtLineStarts(maskedText), parenDepthAtLineStarts(maskedText), owners);
+	const { braces, parens } = depthsAtLineStarts(maskedText);
+	const scopeStarts = scopeStartByLine(maskedLines, braces, parens, owners);
 	const classFields = new Map<string, string>();
 	for (const field of symbols.fields) {
 		if (field.classMember) {
@@ -314,9 +408,15 @@ function collectReceiverDeclarations(maskedLines: string[]): Map<string, Receive
 		const line = maskedLines[lineNo];
 		const found: Array<{ index: number; name: string; type: string | undefined }> = [];
 		if (/[A-Z]/.test(line)) {
-			collectMatches(TYPED_DECLARATION_RE, line, match => found.push({ index: match.index, name: match[2], type: match[1] }));
+			collectMatches(TYPED_DECLARATION_RE, line, match => {
+				found.push({ index: match.index, name: match[2], type: match[1] });
+				const end = match.index + match[0].length;
+				for (const extra of /^\s*=(?!=)/.test(line.slice(end)) ? followingDeclarators(line, end) : []) {
+					found.push({ index: extra.index, name: extra.name, type: match[1] });
+				}
+			});
 		}
-		if (line.includes('def')) {
+		if (line.includes('def') || line.includes('var')) {
 			collectMatches(DEF_DECLARATION_RE, line, match => found.push({ index: match.index, name: match[1], type: match[2] ?? match[3] }));
 		}
 		if (line.includes('->')) {
@@ -334,6 +434,31 @@ function collectReceiverDeclarations(maskedLines: string[]): Map<string, Receive
 		}
 	}
 	return byName;
+}
+
+function followingDeclarators(line: string, from: number): Array<{ index: number; name: string }> {
+	const declarators: Array<{ index: number; name: string }> = [];
+	let depth = 0;
+	for (let i = from; i < line.length; i++) {
+		const ch = line[i];
+		if (ch === '(' || ch === '[' || ch === '{') {
+			depth++;
+		} else if (ch === ')' || ch === ']' || ch === '}') {
+			if (depth === 0) {
+				break;
+			}
+			depth--;
+		} else if (ch === ';' && depth === 0) {
+			break;
+		} else if (ch === ',' && depth === 0) {
+			const next = /^,\s*([a-z_]\w*)\s*(?==(?!=)|,|;|$)/.exec(line.slice(i));
+			if (!next) {
+				break;
+			}
+			declarators.push({ index: i, name: next[1] });
+		}
+	}
+	return declarators;
 }
 
 function collectMatches(re: RegExp, line: string, onMatch: (match: RegExpExecArray) => void): void {

@@ -1,4 +1,5 @@
-import { simpleNameFromFqn } from './class_index_store';
+import { packageNameFromFqn, simpleNameFromFqn } from './class_index_store';
+import { importedTypeName, resolveTypeName } from './class_parser';
 import { ParsedMethod } from './symbol_parser';
 
 export interface HierarchyMember {
@@ -7,11 +8,10 @@ export interface HierarchyMember {
 	typeName?: string;
 }
 
-const IMPORT_RE = /^\s*import\s+(?!static\s)([A-Za-z_][\w.]*?)(\.\*)?\s*(?:as\s+\w+\s*)?;?\s*$/gm;
-
 export interface HierarchyType {
 	simpleName: string;
 	fqn: string;
+	sourcePath?: string;
 	packageName?: string;
 	extendsTypes?: string[];
 	implementsTypes?: string[];
@@ -28,16 +28,6 @@ interface PendingType {
 	imports: string[];
 }
 
-export function parseImports(text: string): string[] {
-	const imports: string[] = [];
-	IMPORT_RE.lastIndex = 0;
-	let match: RegExpExecArray | null;
-	while ((match = IMPORT_RE.exec(text)) !== null) {
-		imports.push(match[2] ? `${match[1]}.*` : match[1]);
-	}
-	return imports;
-}
-
 export class TypeHierarchyStore {
 	private readonly pending: PendingType[] = [];
 	private readonly fqnsBySimpleName = new Map<string, string[]>();
@@ -46,6 +36,9 @@ export class TypeHierarchyStore {
 	private readonly methodsByClass = new Map<string, ParsedMethod[]>();
 	private readonly fieldTypesByClass = new Map<string, Map<string, string>>();
 	private readonly enumConstantsByClass = new Map<string, Set<string>>();
+	private readonly fileContexts = new Map<string, { packageName: string; imports: string[] }>();
+	private readonly sourceByFqn = new Map<string, string>();
+	private readonly typeInFileCache = new Map<string, string | undefined>();
 	private resolved = true;
 
 	add(
@@ -58,6 +51,12 @@ export class TypeHierarchyStore {
 		for (const type of types) {
 			this.pending.push({ type, imports });
 			push(this.fqnsBySimpleName, type.simpleName, type.fqn);
+			if (type.sourcePath) {
+				this.sourceByFqn.set(type.fqn, type.sourcePath);
+			}
+			if (type.sourcePath && !this.fileContexts.has(type.sourcePath)) {
+				this.fileContexts.set(type.sourcePath, { packageName: type.packageName ?? packageNameFromFqn(type.fqn), imports });
+			}
 		}
 		for (const method of methods) {
 			push(this.methodsByClass, method.classFqn, method);
@@ -74,6 +73,51 @@ export class TypeHierarchyStore {
 			names.add(constant.name);
 			this.enumConstantsByClass.set(constant.classFqn, names);
 		}
+		this.resolved = false;
+		this.typeInFileCache.clear();
+	}
+
+	removeFile(
+		sourcePath: string,
+		types: HierarchyType[],
+		methods: ParsedMethod[],
+		fields: HierarchyMember[] = [],
+		enumConstants: HierarchyMember[] = []
+	): void {
+		const removedTypes = new Set(types);
+		const kept = this.pending.filter(entry => !removedTypes.has(entry.type));
+		this.pending.length = 0;
+		this.pending.push(...kept);
+		for (const type of types) {
+			const fqns = this.fqnsBySimpleName.get(type.simpleName);
+			const index = fqns?.indexOf(type.fqn) ?? -1;
+			if (fqns && index >= 0) {
+				fqns.splice(index, 1);
+				if (fqns.length === 0) {
+					this.fqnsBySimpleName.delete(type.simpleName);
+				}
+			}
+			if (this.sourceByFqn.get(type.fqn) === sourcePath) {
+				this.sourceByFqn.delete(type.fqn);
+			}
+		}
+		const removedMethods = new Set(methods);
+		for (const classFqn of new Set(methods.map(method => method.classFqn))) {
+			const remaining = (this.methodsByClass.get(classFqn) ?? []).filter(method => !removedMethods.has(method));
+			if (remaining.length > 0) {
+				this.methodsByClass.set(classFqn, remaining);
+			} else {
+				this.methodsByClass.delete(classFqn);
+			}
+		}
+		for (const field of fields) {
+			this.fieldTypesByClass.get(field.classFqn)?.delete(field.name);
+		}
+		for (const constant of enumConstants) {
+			this.enumConstantsByClass.get(constant.classFqn)?.delete(constant.name);
+		}
+		this.fileContexts.delete(sourcePath);
+		this.typeInFileCache.clear();
 		this.resolved = false;
 	}
 
@@ -92,7 +136,26 @@ export class TypeHierarchyStore {
 		this.methodsByClass.clear();
 		this.fieldTypesByClass.clear();
 		this.enumConstantsByClass.clear();
+		this.fileContexts.clear();
+		this.sourceByFqn.clear();
+		this.typeInFileCache.clear();
 		this.resolved = true;
+	}
+
+	sourceOf(fqn: string): string | undefined {
+		return this.sourceByFqn.get(fqn);
+	}
+
+	resolveTypeIn(sourcePath: string, name: string): string | undefined {
+		const key = `${sourcePath}\u0000${name}`;
+		if (!this.typeInFileCache.has(key)) {
+			const context = this.fileContexts.get(sourcePath);
+			const visible = context ? importedTypeName(context.imports, name) ?? name : name;
+			this.typeInFileCache.set(key, context
+				? resolveTypeName(visible, context.packageName, context.imports, this.resolveClass(simpleNameFromFqn(visible)))
+				: undefined);
+		}
+		return this.typeInFileCache.get(key);
 	}
 
 	resolveClass(simpleName: string): string[] {
@@ -134,27 +197,8 @@ export class TypeHierarchyStore {
 	}
 
 	private resolveParent(name: string, type: HierarchyType, imports: string[]): string | undefined {
-		if (name.includes('.')) {
-			return name;
-		}
-		const explicit = imports.find(entry => !entry.endsWith('.*') && entry.endsWith(`.${name}`));
-		if (explicit) {
-			return explicit;
-		}
-		const known = this.resolveClass(name);
-		const packageName = type.packageName ?? (type.fqn.includes('.') ? type.fqn.slice(0, type.fqn.lastIndexOf('.')) : '');
-		const samePackage = packageName ? `${packageName}.${name}` : name;
-		if (known.includes(samePackage)) {
-			return samePackage;
-		}
-		const wildcard = imports
-			.filter(entry => entry.endsWith('.*'))
-			.map(entry => `${entry.slice(0, -2)}.${name}`)
-			.find(candidate => known.includes(candidate));
-		if (wildcard) {
-			return wildcard;
-		}
-		return known.length === 1 ? known[0] : undefined;
+		const visible = importedTypeName(imports, name) ?? name;
+		return resolveTypeName(visible, type.packageName ?? packageNameFromFqn(type.fqn), imports, this.resolveClass(simpleNameFromFqn(visible)));
 	}
 }
 

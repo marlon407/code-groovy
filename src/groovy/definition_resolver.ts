@@ -1,20 +1,16 @@
 import * as fs from 'fs';
-import { MAX_HIERARCHY_DEPTH } from './class_parser';
-import { ClassIndexStore, simpleNameFromFqn } from './class_index_store';
+import { analyzeDocument, DocumentAnalysis, ReceiverAt, receiverAt, resolveChainRootType } from './call_site_extractor';
+import { ClassIndexStore, packageNameFromFqn, simpleNameFromFqn } from './class_index_store';
+import { parseImportEntries, parseImports, parsePackageName, resolveTypeName } from './class_parser';
 import { resolveDeclarationPosition } from './declaration_position';
-import { GrailsArtifactIndex } from './grails_artifact_index';
-import {
-	findMethodInClassHierarchy,
-	preferReferencedEntries,
-	findMethodInText,
-	parseTypeDeclaration
-} from './method_navigation_logic';
-import { buildImportMap, rankTypeMatches, resolveSimpleTypeName } from './type_resolver';
-import { resolveJarTypeDefinition } from './sources_jar_resolver';
-import { candidateClassNamesForReceiver, serviceBeanToClassName } from './service_bean';
 import { findGrailsSourceForFqn } from './fqn_source_resolver';
-import { findFieldInClassHierarchy, ParsedDocumentSymbols, ParsedEnumConstant, parseDocumentSymbols } from './symbol_parser';
-import { resolveChainRootType, resolveReceiverType } from './call_site_extractor';
+import { GrailsArtifactIndex } from './grails_artifact_index';
+import { findFieldInClassHierarchy, findMethodInClassHierarchy, preferReferencedEntries } from './method_navigation_logic';
+import { candidateClassNamesForReceiver, serviceBeanToClassName } from './service_bean';
+import { resolveJarTypeDefinition } from './sources_jar_resolver';
+import { ParsedClassSymbol, ParsedDocumentSymbols, ParsedEnumConstant, ParsedMethod } from './symbol_parser';
+import { escapeRegExp, splitLines } from './text_scan_logic';
+import { buildImportMap, rankTypeMatches, resolveSimpleTypeName } from './type_resolver';
 
 export interface DefinitionTarget {
 	uri: string;
@@ -37,28 +33,30 @@ export interface DefinitionContext {
 }
 
 export function resolveDefinitions(context: DefinitionContext): DefinitionTarget[] {
-	const lineText = context.documentText.split('\n')[context.line] ?? '';
-	const before = lineText.slice(0, context.wordStart);
+	const analysis = analyzeDocument(context.documentText, context.sourcePath);
+	const lineText = splitLines(context.documentText)[context.line] ?? '';
+	const receiver = receiverAt(analysis.maskedText, (analysis.lineStarts[context.line] ?? 0) + context.wordStart);
+	const request: DefinitionRequest = { context, analysis, owner: analysis.owners[context.line], receiver };
 
 	const serviceClass = serviceBeanToClassName(context.word);
-	if (serviceClass && !lineText.match(new RegExp(`\\bdef\\s+${escapeRegex(context.word)}\\s*\\(`))) {
+	if (serviceClass && !lineText.match(new RegExp(`\\bdef\\s+${escapeRegExp(context.word)}\\s*\\(`))) {
 		const serviceTargets = artifactTargets(context, serviceClass);
 		if (serviceTargets.length > 0) {
 			return serviceTargets;
 		}
 	}
 
-	const methodTargets = resolveMethodTargets(context, lineText, before);
+	const methodTargets = resolveMethodTargets(request, lineText);
 	if (methodTargets.length > 0) {
 		return methodTargets;
 	}
 
-	const fieldTargets = resolveFieldTargets(context, before);
+	const fieldTargets = resolveFieldTargets(request);
 	if (fieldTargets.length > 0) {
 		return fieldTargets;
 	}
 
-	const constantTargets = resolveConstantTargets(context, before);
+	const constantTargets = resolveConstantTargets(request);
 	if (constantTargets.length > 0) {
 		return constantTargets;
 	}
@@ -74,79 +72,90 @@ export function resolveDefinitions(context: DefinitionContext): DefinitionTarget
 	return [];
 }
 
-function resolveMethodTargets(
-	context: DefinitionContext,
-	lineText: string,
-	before: string
-): DefinitionTarget[] {
+interface DefinitionRequest {
+	context: DefinitionContext;
+	analysis: DocumentAnalysis;
+	owner: ParsedClassSymbol | undefined;
+	receiver: ReceiverAt;
+}
+
+function resolveMethodTargets(request: DefinitionRequest, lineText: string): DefinitionTarget[] {
+	const { context, receiver } = request;
 	const methodName = context.word;
 	if (!methodName || methodName === 'def' || /^[A-Z]/.test(methodName)) {
 		return [];
 	}
 
-	if (lineText.match(new RegExp(`^\\s*def\\s+${escapeRegex(methodName)}\\s*\\(`))) {
+	if (lineText.match(new RegExp(`^\\s*def\\s+${escapeRegExp(methodName)}\\s*\\(`))) {
 		return [];
 	}
 
-	const isReceiverCall = /\.\s*$/.test(before);
-	if (!isReceiverCall && serviceBeanToClassName(methodName)) {
+	if (receiver.kind === 'opaque') {
+		return [];
+	}
+	if (receiver.kind === 'none' && serviceBeanToClassName(methodName)) {
 		return [];
 	}
 
-	if (isReceiverCall) {
-		const receiver = getReceiverName(before);
-		if (!receiver) {
-			return [];
-		}
-		if (receiver === 'super') {
-			for (const parent of parseTypeDeclaration(context.documentText)?.parents ?? []) {
-				const inherited = findMethodInArtifactHierarchy(context, parent, methodName);
-				if (inherited.length > 0) {
-					return inherited;
-				}
-			}
-			return [];
-		}
-		if (receiver !== 'this') {
-			const chainType = resolveReceiverChainType(context, before);
-			const declaredType = resolveReceiverType(context.documentText, context.line, receiver);
-			const candidates = [...new Set([
-				...(chainType ? [chainType] : []),
-				...(declaredType ? [simpleNameFromFqn(declaredType)] : []),
-				...candidateClassNamesForReceiver(receiver)
-			])];
-			for (const className of candidates) {
-				const found = findMethodInArtifactHierarchy(context, className, methodName);
-				if (found.length > 0) {
-					return found;
-				}
-			}
-			return [];
-		}
+	if (receiver.kind === 'name' && receiver.name === 'super') {
+		return firstFound(ownerParents(request), parent => findMethodInArtifactHierarchy(context, parent, methodName));
+	}
+	if (receiver.kind === 'name' && receiver.name !== 'this') {
+		return firstFound(receiverTypeCandidates(request, receiver), className => findMethodInArtifactHierarchy(context, className, methodName));
 	}
 
-	const local = findMethodInText(context.documentText, methodName).map(loc => ({
+	const local = ownMethods(request, methodName).map(method => ({
 		uri: context.sourcePath,
-		line: loc.line,
-		column: loc.column,
+		line: method.line,
+		column: method.column,
 		label: methodName
 	}));
 	if (local.length > 0) {
 		return local;
 	}
+	return firstFound(ownerParents(request), parent => findMethodInArtifactHierarchy(context, parent, methodName));
+}
 
-	const typeDecl = parseTypeDeclaration(context.documentText);
-	if (!typeDecl) {
-		return [];
+function ownMethods(request: DefinitionRequest, methodName: string): ParsedMethod[] {
+	const named = request.analysis.symbols.methods.filter(method => method.name === methodName);
+	const owner = request.owner;
+	if (!owner || named.length <= 1) {
+		return named;
 	}
-
-	for (const parent of typeDecl.parents) {
-		const inherited = findMethodInArtifactHierarchy(context, parent, methodName);
-		if (inherited.length > 0) {
-			return inherited;
+	const enclosing = request.analysis.symbols.classes
+		.filter(cls => cls.fqn === owner.fqn || owner.fqn.startsWith(`${cls.fqn}.`))
+		.sort((a, b) => b.fqn.length - a.fqn.length);
+	for (const cls of enclosing) {
+		const declared = named.filter(method => method.classFqn === cls.fqn);
+		if (declared.length > 0) {
+			return declared;
 		}
 	}
+	return named;
+}
 
+function ownerParents(request: DefinitionRequest): string[] {
+	const owner = request.owner;
+	return owner ? [...owner.extendsTypes, ...owner.implementsTypes].map(simpleNameFromFqn) : [];
+}
+
+function receiverTypeCandidates(request: DefinitionRequest, receiver: { name: string; chain?: string[] }): string[] {
+	const chainType = receiver.chain ? resolveReceiverChainType(request, receiver.chain) : undefined;
+	const declaredType = receiver.chain ? undefined : request.analysis.resolveType(receiver.name, request.context.line);
+	return [...new Set([
+		...(chainType ? [chainType] : []),
+		...(declaredType ? [simpleNameFromFqn(declaredType)] : []),
+		...candidateClassNamesForReceiver(receiver.name)
+	])];
+}
+
+function firstFound(candidates: string[], find: (candidate: string) => DefinitionTarget[]): DefinitionTarget[] {
+	for (const candidate of candidates) {
+		const found = find(candidate);
+		if (found.length > 0) {
+			return found;
+		}
+	}
 	return [];
 }
 
@@ -172,66 +181,27 @@ function findMethodInArtifactHierarchy(
 	}));
 }
 
-function resolveFieldTargets(context: DefinitionContext, before: string): DefinitionTarget[] {
+function resolveFieldTargets(request: DefinitionRequest): DefinitionTarget[] {
+	const { context, receiver } = request;
 	const fieldName = context.word;
-	if (!fieldName || /^[A-Z]/.test(fieldName)) {
+	if (!fieldName || /^[A-Z]/.test(fieldName) || receiver.kind !== 'name') {
 		return [];
 	}
-	if (!/\.\s*$/.test(before)) {
-		return [];
+	if (receiver.name === 'this') {
+		return resolveOwnFieldTarget(request, fieldName);
 	}
-
-	const receiver = getReceiverName(before);
-	if (!receiver) {
-		return [];
-	}
-
-	if (receiver === 'this') {
-		return resolveOwnFieldTarget(context, fieldName);
-	}
-
-	const chainType = resolveReceiverChainType(context, before);
-	const scopedType = resolveReceiverType(context.documentText, context.line, receiver);
-	const declaredType = declaredFieldTypeName(context.documentText, context.sourcePath, receiver);
-	const candidates = [...new Set([
-		...(chainType ? [chainType] : []),
-		...(scopedType ? [simpleNameFromFqn(scopedType)] : []),
-		...(declaredType ? [declaredType] : []),
-		...candidateClassNamesForReceiver(receiver)
-	])];
-
-	for (const className of candidates) {
-		const found = findFieldInArtifactHierarchy(context, className, fieldName);
-		if (found.length > 0) {
-			return found;
-		}
-	}
-	return [];
+	return firstFound(receiverTypeCandidates(request, receiver), className => findFieldInArtifactHierarchy(context, className, fieldName));
 }
 
-function resolveOwnFieldTarget(context: DefinitionContext, fieldName: string): DefinitionTarget[] {
-	const ownField = parseDocumentSymbols(context.documentText, context.sourcePath).fields.find(
-		field => field.classMember && field.name === fieldName
+function resolveOwnFieldTarget(request: DefinitionRequest, fieldName: string): DefinitionTarget[] {
+	const { context, owner } = request;
+	const ownField = request.analysis.symbols.fields.find(
+		field => field.classMember && field.name === fieldName && (!owner || field.classFqn === owner.fqn)
 	);
 	if (ownField) {
 		return [{ uri: context.sourcePath, line: ownField.line, column: ownField.column, label: fieldName }];
 	}
-
-	const typeDecl = parseTypeDeclaration(context.documentText);
-	if (!typeDecl) {
-		return [];
-	}
-	for (const parent of typeDecl.parents) {
-		const inherited = findFieldInArtifactHierarchy(context, parent, fieldName);
-		if (inherited.length > 0) {
-			return inherited;
-		}
-	}
-	return [];
-}
-
-function declaredFieldTypeName(documentText: string, sourcePath: string, name: string): string | undefined {
-	return parseDocumentSymbols(documentText, sourcePath).fields.find(field => field.classMember && field.name === name)?.typeName;
+	return firstFound(ownerParents(request), parent => findFieldInArtifactHierarchy(context, parent, fieldName));
 }
 
 function findFieldInArtifactHierarchy(
@@ -254,20 +224,33 @@ function findFieldInArtifactHierarchy(
 	}));
 }
 
-function findClassEntries(context: DefinitionContext, className: string): Array<{ filePath: string }> {
+function findClassEntries(context: DefinitionContext, className: string): Array<{ filePath: string; packageName?: string }> {
 	const artifactEntries = context.artifactIndex.findAllByClassName(className);
 	if (artifactEntries.length > 0) {
 		return artifactEntries;
+	}
+	const declared = [...new Set(context.classStore.lookup(className)
+		.filter(type => type.source === 'workspace' && type.sourcePath)
+		.map(type => type.sourcePath as string))];
+	if (declared.length > 0) {
+		return declared.map(filePath => ({ filePath }));
 	}
 	if (!context.workspaceRoot) {
 		return [];
 	}
 	const fqn = resolveFqnForSimpleName(context, className);
-	if (!fqn) {
-		return [];
-	}
-	const sourcePath = findGrailsSourceForFqn(fqn, context.workspaceRoot);
+	const sourcePath = fqn ? findSourceForTypeFqn(fqn, context.workspaceRoot) : undefined;
 	return sourcePath ? [{ filePath: sourcePath }] : [];
+}
+
+function findSourceForTypeFqn(fqn: string, workspaceRoot: string): string | undefined {
+	for (let candidate = fqn; /\.[A-Z]\w*$/.test(candidate); candidate = packageNameFromFqn(candidate)) {
+		const sourcePath = findGrailsSourceForFqn(candidate, workspaceRoot);
+		if (sourcePath) {
+			return sourcePath;
+		}
+	}
+	return undefined;
 }
 
 function resolveTypeFromClasspath(context: DefinitionContext, simpleName: string): DefinitionTarget[] {
@@ -361,14 +344,7 @@ function artifactTargets(context: DefinitionContext, className: string): Definit
 }
 
 function resolveFqnForSimpleName(context: DefinitionContext, className: string): string | undefined {
-	const importMap = buildImportMap(context.documentText);
-	if (importMap.bySimpleName.has(className)) {
-		return importMap.bySimpleName.get(className);
-	}
-	if (importMap.packageName) {
-		return `${importMap.packageName}.${className}`;
-	}
-	return undefined;
+	return resolveTypeName(className, parsePackageName(context.documentText), parseImports(context.documentText));
 }
 
 function typeToTarget(
@@ -390,7 +366,7 @@ function typeToTarget(
 		};
 	}
 	if (type.source === 'jar') {
-		const simpleName = type.fqn.includes('.') ? type.fqn.slice(type.fqn.lastIndexOf('.') + 1) : type.fqn;
+		const simpleName = simpleNameFromFqn(type.fqn);
 		const fromWorkspace = workspaceTargetForFqn(context, type.fqn, simpleName);
 		if (fromWorkspace) {
 			return fromWorkspace;
@@ -413,16 +389,17 @@ function typeToTarget(
 	return undefined;
 }
 
-function resolveConstantTargets(context: DefinitionContext, before: string): DefinitionTarget[] {
+function resolveConstantTargets(request: DefinitionRequest): DefinitionTarget[] {
+	const { context, analysis, receiver } = request;
 	const name = context.word;
-	const own = parseDocumentSymbols(context.documentText, context.sourcePath);
+	const own = analysis.symbols;
 	const declared = own.enumConstants.find(constant =>
 		constant.line === context.line && constant.column === context.wordStart && constant.name === name);
 	if (declared) {
 		return [enumConstantDeclarationTarget(context, own, declared)];
 	}
 
-	if (!/\.\s*$/.test(before)) {
+	if (receiver.kind === 'none') {
 		if (!/^[A-Z][A-Z0-9_]*$/.test(name)) {
 			return [];
 		}
@@ -431,25 +408,38 @@ function resolveConstantTargets(context: DefinitionContext, before: string): Def
 			return [{ uri: context.sourcePath, line: ownConstant.line, column: ownConstant.column, label: name }];
 		}
 		const ownField = own.fields.find(field => field.classMember && field.name === name);
-		return ownField ? [{ uri: context.sourcePath, line: ownField.line, column: ownField.column, label: name }] : [];
+		if (ownField) {
+			return [{ uri: context.sourcePath, line: ownField.line, column: ownField.column, label: name }];
+		}
+		return firstFound(staticImportOwners(context.documentText, name), owner => constantInType(context, owner, name));
 	}
 
-	const receiver = getReceiverName(before);
-	if (!receiver || !/^[A-Z]/.test(receiver)) {
+	if (receiver.kind !== 'name' || !/^[A-Z]/.test(receiver.name)) {
 		return [];
 	}
-	const entries = preferReferencedEntries(findClassEntries(context, receiver), receiver, readFileSafe, context.documentText);
+	const found = constantInType(context, receiver.name, name);
+	return found.length > 0 ? found : findFieldInArtifactHierarchy(context, receiver.name, name);
+}
+
+function constantInType(context: DefinitionContext, typeName: string, name: string): DefinitionTarget[] {
+	const entries = preferReferencedEntries(findClassEntries(context, typeName), typeName, readFileSafe, context.documentText);
 	for (const entry of entries) {
 		const content = readFileSafe(entry.filePath);
 		const constant = content
-			? parseDocumentSymbols(content, entry.filePath).enumConstants.find(candidate =>
-				candidate.name === name && simpleNameFromFqn(candidate.enumFqn) === receiver)
+			? analyzeDocument(content, entry.filePath).symbols.enumConstants.find(candidate =>
+				candidate.name === name && simpleNameFromFqn(candidate.enumFqn) === typeName)
 			: undefined;
 		if (constant) {
-			return [{ uri: entry.filePath, line: constant.line, column: constant.column, label: `${receiver}.${name}` }];
+			return [{ uri: entry.filePath, line: constant.line, column: constant.column, label: `${typeName}.${name}` }];
 		}
 	}
-	return findFieldInArtifactHierarchy(context, receiver, name);
+	return [];
+}
+
+function staticImportOwners(documentText: string, name: string): string[] {
+	return parseImportEntries(documentText)
+		.filter(entry => entry.isStatic && (entry.wildcard || simpleNameFromFqn(entry.fqn) === name))
+		.map(entry => simpleNameFromFqn(entry.wildcard ? entry.fqn : packageNameFromFqn(entry.fqn)));
 }
 
 function enumConstantDeclarationTarget(
@@ -466,66 +456,18 @@ function enumConstantDeclarationTarget(
 	return { uri: context.sourcePath, line: enumClass?.line ?? 0, column: enumClass?.column ?? 0, label: simpleNameFromFqn(constant.enumFqn) };
 }
 
-function getReceiverName(beforeMethod: string): string | undefined {
-	const match = beforeMethod.match(/([A-Za-z_]\w*)\s*[?*]?\.\s*$/);
-	return match?.[1];
-}
-
-function resolveReceiverChainType(context: DefinitionContext, before: string): string | undefined {
-	const chain = before.match(/((?:[A-Za-z_]\w*\s*[?*]?\.\s*){2,})$/)?.[1];
-	if (!chain || /[)\].]$/.test(before.slice(0, before.length - chain.length))) {
-		return undefined;
-	}
-	const segments = chain.split(/\s*[?*]?\.\s*/).filter(Boolean);
-	const rootType = resolveChainRootType(context.documentText, context.line, segments[0], context.sourcePath);
+function resolveReceiverChainType(request: DefinitionRequest, chain: string[]): string | undefined {
+	const { context } = request;
+	const rootType = resolveChainRootType(context.documentText, context.line, chain[0], context.sourcePath);
 	let typeName = rootType ? simpleNameFromFqn(rootType) : undefined;
-	for (const segment of segments.slice(1)) {
+	for (const segment of chain.slice(1)) {
 		if (!typeName) {
 			return undefined;
 		}
-		typeName = fieldTypeInHierarchy(context, typeName, segment, context.documentText);
+		const member = findFieldInClassHierarchy(readFileSafe, name => findClassEntries(context, name), typeName, segment, context.documentText)[0];
+		typeName = member ? member.typeName : /^[A-Z]/.test(segment) ? segment : undefined;
 	}
 	return typeName;
-}
-
-function fieldTypeInHierarchy(
-	context: DefinitionContext,
-	className: string,
-	fieldName: string,
-	referencingContent: string,
-	visited: Set<string> = new Set(),
-	depth = 0
-): string | undefined {
-	if (depth > MAX_HIERARCHY_DEPTH) {
-		return undefined;
-	}
-	for (const entry of preferReferencedEntries(findClassEntries(context, className), className, readFileSafe, referencingContent)) {
-		if (visited.has(entry.filePath)) {
-			continue;
-		}
-		visited.add(entry.filePath);
-		const content = readFileSafe(entry.filePath);
-		if (!content) {
-			continue;
-		}
-		const parsed = parseDocumentSymbols(content, entry.filePath);
-		if (parsed.enumConstants.some(constant => constant.name === fieldName && simpleNameFromFqn(constant.enumFqn) === className)) {
-			return className;
-		}
-		const field = parsed.fields.find(candidate => candidate.classMember && candidate.name === fieldName
-			&& simpleNameFromFqn(candidate.classFqn) === className);
-		if (field) {
-			return simpleNameFromFqn(field.typeName);
-		}
-		const ownClass = parsed.classes.find(cls => cls.simpleName === className);
-		for (const parent of [...(ownClass?.extendsTypes ?? []), ...(ownClass?.implementsTypes ?? [])]) {
-			const inherited = fieldTypeInHierarchy(context, simpleNameFromFqn(parent), fieldName, content, visited, depth + 1);
-			if (inherited) {
-				return inherited;
-			}
-		}
-	}
-	return undefined;
 }
 
 function readFileSafe(filePath: string): string | undefined {
@@ -534,8 +476,4 @@ function readFileSafe(filePath: string): string | undefined {
 	} catch {
 		return undefined;
 	}
-}
-
-function escapeRegex(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

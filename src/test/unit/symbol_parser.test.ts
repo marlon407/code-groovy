@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { findFieldInClassHierarchy, parseDocumentSymbols } from '../../groovy/symbol_parser';
+import { parseDocumentSymbols } from '../../groovy/symbol_parser';
 
 suite('parseDocumentSymbols — masked source', () => {
 	test('ignores declarations inside strings and reads qualified or generic supertypes', () => {
@@ -113,7 +113,7 @@ suite('parseDocumentSymbols — class members and nested types', () => {
 		].join('\n');
 		const fields = parseDocumentSymbols(text, '/tmp/Outer.groovy').fields;
 		assert.deepStrictEqual(fields.map(field => `${field.name}@${field.classFqn}:${field.classMember}`), [
-			'name@Outer:true', 'code@Inner:true', 'local@Outer:false', 'total@Outer:true'
+			'name@Outer:true', 'code@Outer.Inner:true', 'local@Outer:false', 'total@Outer:true'
 		]);
 	});
 
@@ -143,31 +143,62 @@ suite('parseDocumentSymbols — very long lines', () => {
 	});
 });
 
-suite('findFieldInClassHierarchy', () => {
-	const files: Record<string, string> = {
-		'/p/Base.groovy': 'package p\nclass Base {\n    String code\n}',
-		'/q/Base.groovy': 'package q\nclass Base {\n    String other\n    String code\n}',
-		'/q/Child.groovy': 'package q\nclass Child extends Base implements Named, Coded {\n}',
-		'/q/Named.groovy': 'package q\ninterface Named extends Root {\n}',
-		'/q/Coded.groovy': 'package q\ninterface Coded extends Root {\n}',
-		'/q/Root.groovy': 'package q\ninterface Root {\n}'
-	};
-	const entriesFor = (className: string) => Object.keys(files)
-		.filter(filePath => filePath.endsWith(`/${className}.groovy`))
-		.map(filePath => ({ filePath }));
-
-	test('picks the homonym parent from the same package as the class that extends it', () => {
-		const found = findFieldInClassHierarchy(filePath => files[filePath], entriesFor, 'Child', 'code', 'package q\nclass Caller {}');
-		assert.deepStrictEqual(found, [{ filePath: '/q/Base.groovy', line: 3, column: 11 }]);
+suite('parseDocumentSymbols — declarations the parser used to miss', () => {
+	test('reads generic methods and qualified or default return types', () => {
+		const text = [
+			'class PaginationDTO<T> {',
+			'    public static <T> PaginationDTO<T> create(List<T> list) { null }',
+			'    java.util.Map build() { [:] }',
+			'    default void describe() {}',
+			'}'
+		].join('\n');
+		const methods = parseDocumentSymbols(text, '/tmp/PaginationDTO.groovy').methods;
+		assert.deepStrictEqual(methods.map(method => `${method.name}@${method.line}:${method.column}`), ['create@1:39', 'build@2:18', 'describe@3:17']);
 	});
 
-	test('reads a type reached through two paths only once', () => {
-		const reads: string[] = [];
-		const found = findFieldInClassHierarchy(filePath => {
-			reads.push(filePath);
-			return files[filePath];
-		}, entriesFor, 'Child', 'missing', 'package q');
-		assert.deepStrictEqual(found, []);
-		assert.strictEqual(reads.filter(filePath => filePath === '/q/Root.groovy').length, 1);
+	test('takes the column of the declared name, not of an earlier match inside a modifier', () => {
+		const text = 'class Crypter {\n\tprivate byte[] iv(String iv64 = null) { null }\n}';
+		const [method] = parseDocumentSymbols(text, '/tmp/Crypter.groovy').methods;
+		assert.deepStrictEqual([method.name, method.line, method.column], ['iv', 1, 16]);
+	});
+
+	test('reads a class header split across lines and a class with an annotation on the same line', () => {
+		const text = [
+			'class Foo extends Bar',
+			'        implements Baz,',
+			'            Qux {',
+			'}',
+			'@CompileStatic class Other extends Base {',
+			'}'
+		].join('\n');
+		const classes = parseDocumentSymbols(text, '/tmp/Foo.groovy').classes;
+		assert.deepStrictEqual(classes.map(cls => [cls.simpleName, cls.line, cls.endLine, cls.extendsTypes, cls.implementsTypes]), [
+			['Foo', 0, 3, ['Bar'], ['Baz', 'Qux']],
+			['Other', 4, 5, ['Base'], []]
+		]);
+	});
+
+	test('reads a member declared on the same line as a one-line class or after the constants of a one-line enum', () => {
+		const text = 'class A { void x() {} }\nenum Color { RED, GREEN; int code() { 1 } }';
+		const symbols = parseDocumentSymbols(text, '/tmp/A.groovy');
+		assert.deepStrictEqual(symbols.methods.map(method => `${method.name}@${method.classFqn}`), ['x@A', 'code@Color']);
+		assert.deepStrictEqual(symbols.enumConstants.map(constant => constant.name), ['RED', 'GREEN']);
+	});
+
+	test('does not treat local variables of a script as class members', () => {
+		const text = 'def run() {\n    Foo local = build()\n    local.go()\n}';
+		assert.deepStrictEqual(parseDocumentSymbols(text, '/tmp/script.groovy').fields.map(field => `${field.name}:${field.classMember}`), ['local:false']);
+	});
+
+	test('reads non-ASCII class names and names nested types after their outer type', () => {
+		const text = 'package a\nclass Ação {\n    enum Status { OPEN }\n}';
+		assert.deepStrictEqual(parseDocumentSymbols(text, '/tmp/Acao.groovy').classes.map(cls => cls.fqn), ['a.Ação', 'a.Ação.Status']);
+	});
+
+	test('keeps constructors with modifiers out of the methods', () => {
+		const text = 'class Widget {\n    public Widget(String name) {}\n    private Widget() {}\n    void run() {}\n}';
+		const symbols = parseDocumentSymbols(text, '/tmp/Widget.groovy');
+		assert.deepStrictEqual(symbols.methods.map(method => method.name), ['run']);
+		assert.deepStrictEqual(symbols.constructors.map(constructor => `${constructor.line}:${constructor.column}`), ['1:11', '2:12']);
 	});
 });
