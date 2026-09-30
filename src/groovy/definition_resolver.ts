@@ -97,6 +97,15 @@ function resolveMethodTargets(
 		if (!receiver) {
 			return [];
 		}
+		if (receiver === 'super') {
+			for (const parent of parseTypeDeclaration(context.documentText)?.parents ?? []) {
+				const inherited = findMethodInArtifactHierarchy(context, parent, methodName);
+				if (inherited.length > 0) {
+					return inherited;
+				}
+			}
+			return [];
+		}
 		if (receiver !== 'this') {
 			const chainType = resolveReceiverChainType(context, before);
 			const declaredType = resolveReceiverType(context.documentText, context.line, receiver);

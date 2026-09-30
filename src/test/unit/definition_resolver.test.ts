@@ -311,6 +311,13 @@ suite('findMethodInClassHierarchy — same-named supertypes', () => {
 		assert.deepStrictEqual(lookup('PixRequestBuilder'), ['/w/debit/BaseRequestBuilder.groovy']);
 	});
 
+	test('goes from super.method() to the supertype in the same package', () => {
+		const source = 'package com.example.fixture.domain\nclass SpecialWidget extends Widget {\n    void rename(String value) {\n        super.rename(value)\n    }\n}';
+		const lineText = source.split('\n')[3];
+		const targets = buildContext(source, path.join(fixturesRoot, 'SpecialWidget.groovy'), 3, 'rename', lineText.indexOf('rename'));
+		assert.deepStrictEqual(targets.map(target => path.basename(target.uri)), ['Widget.groovy']);
+	});
+
 	test('picks the class the referencing file refers to when the name itself is ambiguous', () => {
 		assert.deepStrictEqual(lookup('BaseRequestBuilder', 'package adyen.debit\nclass X {\n}'), ['/w/debit/BaseRequestBuilder.groovy']);
 	});
