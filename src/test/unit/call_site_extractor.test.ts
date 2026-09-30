@@ -1,11 +1,11 @@
 import * as assert from 'assert';
-import { CHAINED_RECEIVER, extractCallSites, excludeDeclarationCallSites, resolveReceiverType } from '../../groovy/call_site_extractor';
+import { analyzeSource, excludeDeclarationCallSites, resolveChainRootType, resolveReceiverType } from '../../groovy/call_site_extractor';
 import { ParsedMethod, parseDocumentSymbols } from '../../groovy/symbol_parser';
 
 suite('call_site_extractor', () => {
 	test('extracts a qualified call with its receiver', () => {
 		const text = 'receivableAnticipationPartnerSettlementItemService.updateStatusInBatch(idList)';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 1);
 		assert.strictEqual(records[0].methodName, 'updateStatusInBatch');
 		assert.strictEqual(records[0].receiverName, 'receivableAnticipationPartnerSettlementItemService');
@@ -15,7 +15,7 @@ suite('call_site_extractor', () => {
 
 	test('extracts an unqualified call with no receiver', () => {
 		const text = 'validateCommercialInfoUpdate(customerId, params)';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 1);
 		assert.strictEqual(records[0].methodName, 'validateCommercialInfoUpdate');
 		assert.strictEqual(records[0].receiverName, undefined);
@@ -23,7 +23,7 @@ suite('call_site_extractor', () => {
 
 	test('tolerates whitespace around the dot', () => {
 		const text = '   receivableAnticipationPartnerSettlementItemService  .  updateStatusInBatch(x)';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 1);
 		assert.strictEqual(records[0].receiverName, 'receivableAnticipationPartnerSettlementItemService');
 		assert.strictEqual(records[0].column, text.indexOf('updateStatusInBatch'));
@@ -31,7 +31,7 @@ suite('call_site_extractor', () => {
 
 	test('skips calls inside string literals', () => {
 		const text = '[logErrorMessage: "CustomerService.updateCommercialInfo >> Erro ao atualizar"]';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 0);
 	});
 
@@ -40,7 +40,7 @@ suite('call_site_extractor', () => {
 			'webhookRequestService.updateStatusInBatch(webhookProcessedIdList, WebhookRequestStatus.PROCESSED)',
 			'webhookRequestService.updateStatusInBatch(webhookErrorIdList, WebhookRequestStatus.ERROR)'
 		].join('\n');
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 2);
 		assert.strictEqual(records[0].line, 0);
 		assert.strictEqual(records[1].line, 1);
@@ -48,13 +48,13 @@ suite('call_site_extractor', () => {
 
 	test('does not choke on lines with unmatched parentheses', () => {
 		const text = 'def x = (1 + 2)';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 0);
 	});
 
 	test('a method declaration is itself extracted as a call site with no receiver', () => {
 		const text = 'public void updateItemAsPaid(ReceivableAnticipationPartnerSettlementItem settlementItem) {';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 1);
 		assert.strictEqual(records[0].methodName, 'updateItemAsPaid');
 		assert.strictEqual(records[0].receiverName, undefined);
@@ -62,7 +62,7 @@ suite('call_site_extractor', () => {
 
 	test('extracts a receiver-qualified call using paren-less closure syntax', () => {
 		const text = 'exists AnticipationPartnerSettlementItemPixTransaction.where {';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 1);
 		assert.strictEqual(records[0].methodName, 'where');
 		assert.strictEqual(records[0].receiverName, 'AnticipationPartnerSettlementItemPixTransaction');
@@ -71,14 +71,14 @@ suite('call_site_extractor', () => {
 	test('ignores a bare identifier followed by { with no receiver', () => {
 		const cases = ['} else {', 'try {', 'finally {', 'class Widget {'];
 		for (const text of cases) {
-			const records = extractCallSites(text, '/tmp/Widget.groovy');
+			const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 			assert.strictEqual(records.length, 0, `expected no records for: ${text}`);
 		}
 	});
 
 	test('keeps the receiver of a safe-navigation call', () => {
 		const text = 'widgetService?.save(widget)';
-		const records = extractCallSites(text, '/tmp/Widget.groovy');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 1);
 		assert.strictEqual(records[0].methodName, 'save');
 		assert.strictEqual(records[0].receiverName, 'widgetService');
@@ -86,7 +86,7 @@ suite('call_site_extractor', () => {
 	});
 
 	test('keeps the receiver of a spread call', () => {
-		const records = extractCallSites('widgets*.rename(value)', '/tmp/Widget.groovy');
+		const records = analyzeSource('widgets*.rename(value)', '/tmp/Widget.groovy').callSites;
 		assert.strictEqual(records.length, 1);
 		assert.strictEqual(records[0].methodName, 'rename');
 		assert.strictEqual(records[0].receiverName, 'widgets');
@@ -100,7 +100,7 @@ suite('call_site_extractor', () => {
 			' * Calls widgetService.activate(w)',
 			' */'
 		].join('\n');
-		assert.deepStrictEqual(extractCallSites(text, '/tmp/Widget.groovy'), []);
+		assert.deepStrictEqual(analyzeSource(text, '/tmp/Widget.groovy').callSites, []);
 	});
 
 	test('indexes calls inside GString interpolation and after strings with apostrophes', () => {
@@ -108,7 +108,7 @@ suite('call_site_extractor', () => {
 			'log.info "total: ${widgetService.activate(w)}"',
 			`"don't" + widgetService.activate(w)`
 		].join('\n');
-		const records = extractCallSites(text, '/tmp/Widget.groovy').filter(record => record.methodName === 'activate');
+		const records = analyzeSource(text, '/tmp/Widget.groovy').callSites.filter(record => record.methodName === 'activate');
 		assert.deepStrictEqual(records.map(record => `${record.receiverName}@${record.line}`), ['widgetService@0', 'widgetService@1']);
 	});
 
@@ -123,7 +123,7 @@ suite('call_site_extractor', () => {
 			'    other.save()',
 			'}'
 		].join('\n');
-		const saves = extractCallSites(text, '/tmp/Widget.groovy').filter(record => record.methodName === 'save');
+		const saves = analyzeSource(text, '/tmp/Widget.groovy').callSites.filter(record => record.methodName === 'save');
 		assert.deepStrictEqual(saves.map(record => record.receiverType), ['Order', 'Widget', 'Widget']);
 	});
 
@@ -142,7 +142,7 @@ suite('call_site_extractor', () => {
 			'    }',
 			'}'
 		].join('\n');
-		const confirms = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'confirm');
+		const confirms = analyzeSource(text, '/tmp/Caller.groovy').callSites.filter(record => record.methodName === 'confirm');
 		assert.deepStrictEqual(confirms.map(record => record.receiverType), ['Customer', 'Payment', undefined]);
 	});
 
@@ -157,7 +157,7 @@ suite('call_site_extractor', () => {
 			'    }',
 			'}'
 		].join('\n');
-		const confirms = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'confirm');
+		const confirms = analyzeSource(text, '/tmp/Caller.groovy').callSites.filter(record => record.methodName === 'confirm');
 		assert.deepStrictEqual(confirms.map(record => record.receiverType), ['Payment', 'Customer']);
 	});
 
@@ -175,7 +175,7 @@ suite('call_site_extractor', () => {
 			'    }',
 			'}'
 		].join('\n');
-		const saves = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'save');
+		const saves = analyzeSource(text, '/tmp/Caller.groovy').callSites.filter(record => record.methodName === 'save');
 		assert.deepStrictEqual(saves.map(record => record.receiverType), ['Customer', 'Order']);
 	});
 
@@ -197,7 +197,7 @@ suite('call_site_extractor', () => {
 			'    }',
 			'}'
 		].join('\n');
-		const records = extractCallSites(text, '/tmp/Caller.groovy');
+		const records = analyzeSource(text, '/tmp/Caller.groovy').callSites;
 		assert.strictEqual(records.find(record => record.methodName === 'save')?.receiverType, undefined);
 		assert.strictEqual(records.find(record => record.methodName === 'pay')?.receiverType, 'PaymentService');
 	});
@@ -210,7 +210,7 @@ suite('call_site_extractor', () => {
 			'    list.each { other2 -> other2.confirm() }',
 			'}'
 		].join('\n');
-		const confirm = extractCallSites(text, '/tmp/Caller.groovy').find(record => record.methodName === 'confirm');
+		const confirm = analyzeSource(text, '/tmp/Caller.groovy').callSites.find(record => record.methodName === 'confirm');
 		assert.strictEqual(confirm?.receiverType, undefined);
 		assert.strictEqual(resolveReceiverType(text, 1, 'other'), undefined);
 	});
@@ -224,7 +224,7 @@ suite('call_site_extractor', () => {
 			'    PaymentGateway gateway',
 			'}'
 		].join('\n');
-		assert.strictEqual(extractCallSites(text, '/tmp/Caller.groovy').find(record => record.methodName === 'send')?.receiverType, 'PaymentGateway');
+		assert.strictEqual(analyzeSource(text, '/tmp/Caller.groovy').callSites.find(record => record.methodName === 'send')?.receiverType, 'PaymentGateway');
 	});
 
 	test('marks the end of a call chain with an opaque receiver instead of no receiver', () => {
@@ -233,13 +233,13 @@ suite('call_site_extractor', () => {
 			'items[0].confirm()',
 			'order.customer.confirm()'
 		].join('\n');
-		const confirms = extractCallSites(text, '/tmp/Customer.groovy').filter(record => record.methodName === 'confirm');
-		assert.deepStrictEqual(confirms.map(record => record.receiverName), [CHAINED_RECEIVER, CHAINED_RECEIVER, 'customer']);
+		const confirms = analyzeSource(text, '/tmp/Customer.groovy').callSites.filter(record => record.methodName === 'confirm');
+		assert.deepStrictEqual(confirms.map(record => record.receiverKind ?? record.receiverName), ['chain', 'chain', 'customer']);
 	});
 
 	test('keeps the receiver of a call continued on the next line', () => {
 		const text = ['paymentService', '    .process(2)', 'paymentService?.', '    process(3)'].join('\n');
-		const records = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'process');
+		const records = analyzeSource(text, '/tmp/Caller.groovy').callSites.filter(record => record.methodName === 'process');
 		assert.deepStrictEqual(records.map(record => `${record.receiverName}@${record.line}`), ['paymentService@1', 'paymentService@3']);
 	});
 
@@ -256,7 +256,7 @@ suite('call_site_extractor', () => {
 			'    def helper() {}',
 			'}'
 		].join('\n');
-		const helpers = extractCallSites(text, '/tmp/PaymentService.groovy').filter(record => record.methodName === 'helper' && record.line !== 8);
+		const helpers = analyzeSource(text, '/tmp/PaymentService.groovy').callSites.filter(record => record.methodName === 'helper' && record.line !== 8);
 		assert.deepStrictEqual(helpers.map(record => `${record.ownerClass}@${record.line}`), ['PaymentService@3', 'Item@6']);
 	});
 
@@ -271,7 +271,7 @@ suite('call_site_extractor', () => {
 			'    }',
 			'}'
 		].join('\n');
-		const records = extractCallSites(text, '/tmp/Caller.groovy').filter(record => record.methodName === 'isFinished');
+		const records = analyzeSource(text, '/tmp/Caller.groovy').callSites.filter(record => record.methodName === 'isFinished');
 		assert.deepStrictEqual(records.map(record => [record.receiverRootType, record.receiverPath, record.receiverType]), [
 			['Order', ['status'], undefined],
 			['Status', ['PAID'], undefined],
@@ -283,7 +283,7 @@ suite('call_site_extractor', () => {
 	test('does not index control-flow keywords as calls', () => {
 		const cases = ['if (x) {', 'for (item in list) {', 'while (running) {', 'switch (kind) {', '} catch (Exception e) {', 'return (a + b)'];
 		for (const text of cases) {
-			const records = extractCallSites(text, '/tmp/Widget.groovy');
+			const records = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 			assert.deepStrictEqual(records.map(record => record.methodName), [], `expected no records for: ${text}`);
 		}
 	});
@@ -292,7 +292,7 @@ suite('call_site_extractor', () => {
 suite('excludeDeclarationCallSites', () => {
 	test('removes the call site that matches a method declaration', () => {
 		const text = 'public void updateItemAsPaid(ReceivableAnticipationPartnerSettlementItem settlementItem) {';
-		const callSites = extractCallSites(text, '/tmp/Widget.groovy');
+		const callSites = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		const methods: ParsedMethod[] = [
 			{ name: 'updateItemAsPaid', line: 0, column: text.indexOf('updateItemAsPaid'), classFqn: 'Widget', sourcePath: '/tmp/Widget.groovy' }
 		];
@@ -302,7 +302,7 @@ suite('excludeDeclarationCallSites', () => {
 
 	test('keeps a real call site with a receiver even if the method name matches a declaration', () => {
 		const text = 'partnerSettlement.updateItemAsPaid(settlementItem)';
-		const callSites = extractCallSites(text, '/tmp/Widget.groovy');
+		const callSites = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		const methods: ParsedMethod[] = [
 			{ name: 'updateItemAsPaid', line: 0, column: text.indexOf('updateItemAsPaid'), classFqn: 'Widget', sourcePath: '/tmp/Widget.groovy' }
 		];
@@ -312,7 +312,7 @@ suite('excludeDeclarationCallSites', () => {
 
 	test('keeps a same-line recursive call while removing only the declaration itself', () => {
 		const text = 'def fib(n) { return n <= 1 ? n : fib(n) }';
-		const callSites = extractCallSites(text, '/tmp/Widget.groovy');
+		const callSites = analyzeSource(text, '/tmp/Widget.groovy').callSites;
 		const methods: ParsedMethod[] = [
 			{ name: 'fib', line: 0, column: text.indexOf('fib'), classFqn: 'Widget', sourcePath: '/tmp/Widget.groovy' }
 		];
@@ -331,7 +331,7 @@ suite('excludeDeclarationCallSites', () => {
 		].join('\n');
 		const sourcePath = '/tmp/WidgetService.groovy';
 		const methods = parseDocumentSymbols(text, sourcePath).methods;
-		const filtered = excludeDeclarationCallSites(extractCallSites(text, sourcePath), methods);
+		const filtered = excludeDeclarationCallSites(analyzeSource(text, sourcePath).callSites, methods);
 		assert.deepStrictEqual(filtered.map(record => record.methodName), []);
 	});
 
@@ -345,65 +345,45 @@ suite('excludeDeclarationCallSites', () => {
 		].join('\n');
 		const sourcePath = '/tmp/WidgetService.groovy';
 		const methods = parseDocumentSymbols(text, sourcePath).methods;
-		const filtered = excludeDeclarationCallSites(extractCallSites(text, sourcePath), methods);
+		const filtered = excludeDeclarationCallSites(analyzeSource(text, sourcePath).callSites, methods);
 		assert.deepStrictEqual(filtered.map(record => `${record.methodName}@${record.line}`), ['rename@2']);
 	});
 
 	test('keeps unrelated calls in other files untouched', () => {
 		const text = 'validateCommercialInfoUpdate(customerId, params)';
-		const callSites = extractCallSites(text, '/tmp/Other.groovy');
+		const callSites = analyzeSource(text, '/tmp/Other.groovy').callSites;
 		const methods: ParsedMethod[] = [];
 		const filtered = excludeDeclarationCallSites(callSites, methods);
 		assert.strictEqual(filtered.length, 1);
 	});
 });
 
-suite('parseDocumentSymbols — masked source', () => {
-	test('ignores declarations inside strings and reads qualified or generic supertypes', () => {
-		const text = [
-			'class Report extends com.acme.BaseReport<Map<String, Long>> implements Serializable, java.io.Closeable {',
-			'    String sql = """',
-			'        SELECT SUM(value)',
-			'        class Fake {',
-			'    """',
-			'    void close() {',
-			'    }',
-			'}'
-		].join('\n');
-		const symbols = parseDocumentSymbols(text, '/tmp/Report.groovy');
-		assert.deepStrictEqual(symbols.classes.map(cls => cls.simpleName), ['Report']);
-		assert.deepStrictEqual(symbols.methods.map(method => `${method.name}@${method.classFqn}`), ['close@Report']);
-		assert.deepStrictEqual(symbols.classes[0].extendsTypes, ['com.acme.BaseReport']);
-		assert.deepStrictEqual(symbols.classes[0].implementsTypes, ['Serializable', 'java.io.Closeable']);
-	});
-});
+suite('resolveChainRootType', () => {
+	const text = [
+		'class First {',
+		'    Customer order',
+		'}',
+		'class Second {',
+		'    Order order',
+		'    def run(Payment payment) {',
+		'        this.order.status.isFinished()',
+		'        payment.customer.save()',
+		'    }',
+		'}'
+	].join('\n');
 
-suite('parseDocumentSymbols — modifiers', () => {
-	test('recognizes a declaration with only static and synchronized modifiers', () => {
-		const symbols = parseDocumentSymbols('class Holder {\n    public static synchronized getInstance() {\n    }\n}', '/tmp/Holder.groovy');
-		assert.deepStrictEqual(symbols.methods.map(method => method.name), ['getInstance']);
+	test('types this with the class that owns the line, not the first class of the file', () => {
+		assert.strictEqual(resolveChainRootType(text, 6, 'this', '/tmp/Second.groovy'), 'Second');
 	});
-});
 
-suite('parseDocumentSymbols — enums', () => {
-	test('reads annotated constants, constants on the enum line and constants with bodies', () => {
-		const text = [
-			'enum Status {',
-			'    @Deprecated PENDING,',
-			'    @Deprecated',
-			'    CREDITED(1, "a,b"),',
-			'    REFUNDED {',
-			'        String label() { "x" }',
-			'    }',
-			'    Status() {}',
-			'    Status(Integer code, String name) {}',
-			'}',
-			'enum Kind { A, B }'
-		].join('\n');
-		const symbols = parseDocumentSymbols(text, '/tmp/Status.groovy');
-		assert.deepStrictEqual(symbols.enumConstants.map(constant => `${constant.name}@${constant.line}:${constant.argumentCount}`), [
-			'PENDING@1:0', 'CREDITED@3:2', 'REFUNDED@4:0', 'A@10:0', 'B@10:0'
-		]);
-		assert.deepStrictEqual(symbols.constructors.map(constructor => `${constructor.line}:${constructor.parameterCount}`), ['7:0', '8:2']);
+	test('types a variable root through its declaration and keeps a capitalized root as is', () => {
+		assert.strictEqual(resolveChainRootType(text, 7, 'payment', '/tmp/Second.groovy'), 'Payment');
+		assert.strictEqual(resolveChainRootType(text, 7, 'Status', '/tmp/Second.groovy'), 'Status');
+	});
+
+	test('matches the root type the index records for the same chain', () => {
+		const record = analyzeSource(text, '/tmp/Second.groovy').callSites.find(callSite => callSite.methodName === 'isFinished');
+		assert.strictEqual(record?.receiverRootType, 'Second');
+		assert.deepStrictEqual(record?.receiverPath, ['order', 'status']);
 	});
 });

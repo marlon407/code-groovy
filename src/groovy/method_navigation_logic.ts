@@ -1,4 +1,5 @@
-const MAX_HIERARCHY_DEPTH = 12;
+import { MAX_HIERARCHY_DEPTH, parsePackageName } from './class_parser';
+import { parseImports } from './type_hierarchy_store';
 
 export interface MethodLocation {
 	filePath: string;
@@ -150,22 +151,18 @@ export function preferReferencedEntries<T extends { filePath: string }>(
 	if (entries.length <= 1 || !referencingContent) {
 		return entries;
 	}
-	const imports = [...referencingContent.matchAll(/^\s*import\s+(?!static\s)([\w.]+?)(\.\*)?\s*;?\s*$/gm)];
-	const explicit = imports.find(match => !match[2] && match[1].endsWith(`.${className}`));
+	const imports = parseImports(referencingContent);
+	const explicit = imports.find(entry => !entry.endsWith('.*') && entry.endsWith(`.${className}`));
 	const candidatePackages = explicit
-		? [explicit[1].slice(0, -className.length - 1)]
-		: [packageOf(referencingContent), ...imports.filter(match => match[2]).map(match => match[1])];
+		? [explicit.slice(0, -className.length - 1)]
+		: [parsePackageName(referencingContent), ...imports.filter(entry => entry.endsWith('.*')).map(entry => entry.slice(0, -2))];
 	for (const candidate of candidatePackages) {
-		const matching = entries.filter(entry => packageOf(readFile(entry.filePath) ?? '') === candidate);
+		const matching = entries.filter(entry => parsePackageName(readFile(entry.filePath) ?? '') === candidate);
 		if (matching.length > 0) {
 			return matching;
 		}
 	}
 	return entries;
-}
-
-function packageOf(content: string): string {
-	return content.match(/^\s*package\s+([\w.]+)/m)?.[1] ?? '';
 }
 
 function splitTypeNames(segment?: string): string[] {

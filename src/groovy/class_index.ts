@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { ClassIndexStore, indexJarFqns, IndexedType, MAX_INDEXED_CLASSES } from './class_index_store';
 import { hashWorkspaceBuildFiles, resolveGradleProjectRoot, resolveProjectClasspath } from './classpath_resolver';
-import { detectGrailsModules, collectGrailsModuleSourceFiles } from './grails_module_detector';
 import { DefinitionProvider } from './definition_provider';
 import { ReferenceProvider } from './reference_provider';
 import { CallSiteIndexStore } from './call_site_index_store';
@@ -16,15 +15,16 @@ import { listClassFqnsFromJar } from './jar_class_scanner';
 import { MethodCompletionProvider } from './method_completion_provider';
 import { MethodIndexStore } from './method_index_store';
 import { RenameProvider } from './rename_provider';
+import { discoverSourceFiles } from './source_file_discovery';
+import { planSourceRefresh } from './source_refresh_logic';
 import { GroovyTagLibLinkProvider } from '../gsp/groovy_taglib_link_provider';
 import { ProjectTagLibTag } from '../gsp/taglib_parser';
 import { indexWorkspaceDocument } from './workspace_symbol_index';
-import { parseDocumentSymbols, ParsedMethod } from './symbol_parser';
+import { constructorDeclarations, parseDocumentSymbols, ParsedMethod } from './symbol_parser';
 import { maskNonCode } from './text_scan_logic';
 import { HierarchyMember, parseImports, TypeHierarchyStore } from './type_hierarchy_store';
 
 const CACHE_KEY = 'codeGroovy.classpathIndex.v2';
-const SOURCE_EXCLUDE = '**/{node_modules,.git,build,target,out}/**';
 
 interface CachedClasspath {
 	hash: string;
@@ -224,31 +224,11 @@ export class ClassIndex implements vscode.Disposable {
 
 	private async runSourceRefresh(options: RefreshOptions = {}): Promise<void> {
 		const showProgress = options.showProgress ?? false;
-		const workspaceFolders = vscode.workspace.workspaceFolders;
-		const configuredModules = vscode.workspace.getConfiguration('codeGroovy').get<string[]>('modules');
-		const grailsModules = workspaceFolders
-			? detectGrailsModules(workspaceFolders, configuredModules)
-			: [];
-		let filePaths: string[];
-
-		if (grailsModules.length > 0) {
-			filePaths = collectGrailsModuleSourceFiles(grailsModules);
-			if (showProgress) {
-				this.statusBar?.log(
-					`Grails modules: ${grailsModules.map(module => module.name).join(', ')} (${filePaths.length} source file(s))`
-				);
-			}
-		} else {
-			const maxFiles = vscode.workspace.getConfiguration('codeGroovy').get<number>('index.maxSourceFiles', 0);
-			const files = await vscode.workspace.findFiles(
-				'**/*.{groovy,java}',
-				SOURCE_EXCLUDE,
-				maxFiles > 0 ? maxFiles : undefined
-			);
-			filePaths = files.map(file => file.fsPath);
-			if (showProgress) {
-				this.statusBar?.log(`Workspace scan: ${filePaths.length} source file(s)`);
-			}
+		const { filePaths, grailsModules } = await discoverSourceFiles();
+		if (showProgress) {
+			this.statusBar?.log(grailsModules.length > 0
+				? `Grails modules: ${grailsModules.map(module => module.name).join(', ')} (${filePaths.length} source file(s))`
+				: `Workspace scan: ${filePaths.length} source file(s)`);
 		}
 
 		this.lastSourceFileCount = filePaths.length;
@@ -257,21 +237,16 @@ export class ClassIndex implements vscode.Disposable {
 			this.statusBar?.beginSourceScan(filePaths.length);
 		}
 
-		if (showProgress) {
-			this.sourceCache.clear();
-		}
 		const changed = new Set(this.changedSources);
 		this.changedSources.clear();
-		const listed = new Set(filePaths);
-		for (const cachedPath of [...this.sourceCache.keys()]) {
-			if (!listed.has(cachedPath)) {
-				this.sourceCache.delete(cachedPath);
-			}
+		const plan = planSourceRefresh(filePaths, this.sourceCache.keys(), changed, showProgress);
+		for (const removedPath of plan.removed) {
+			this.sourceCache.delete(removedPath);
 		}
 
 		for (let index = 0; index < filePaths.length; index++) {
 			const filePath = filePaths[index];
-			if (changed.has(filePath) || !this.sourceCache.has(filePath)) {
+			if (plan.toIndex.has(filePath)) {
 				const indexed = await indexSourceFile(filePath);
 				if (indexed) {
 					this.sourceCache.set(filePath, indexed);
@@ -442,7 +417,7 @@ async function indexSourceFile(filePath: string): Promise<IndexedSource | undefi
 				implementsTypes: type.implementsTypes?.map(intern)
 			})),
 			methods: indexed.methods.map(method => ({ ...method, name: intern(method.name), classFqn: intern(method.classFqn) })),
-			callSites: excludeDeclarationCallSites(analysis.callSites, indexed.methods),
+			callSites: excludeDeclarationCallSites(analysis.callSites, [...indexed.methods, ...constructorDeclarations(symbols, filePath)]),
 			typeMentions: analysis.typeMentions,
 			imports: parseImports(text).map(intern),
 			fields: symbols.fields

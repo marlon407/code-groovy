@@ -1,5 +1,7 @@
-import { parsePackageName } from './class_parser';
-import { braceDepthAtLineStarts, closingBraceLine, maskNonCode, parenDepthAtLineStarts } from './text_scan_logic';
+import { simpleNameFromFqn } from './class_index_store';
+import { MAX_HIERARCHY_DEPTH, parsePackageName } from './class_parser';
+import { preferReferencedEntries } from './method_navigation_logic';
+import { braceDepthAtLineStarts, closingBraceLine, escapeRegExp, maskNonCode, parenDepthAtLineStarts } from './text_scan_logic';
 
 export interface ParsedMethod {
 	name: string;
@@ -58,6 +60,7 @@ export interface ParsedDocumentSymbols {
 
 const CLASS_LINE_RE =
 	/^\s*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed)\s+)*(class|interface|trait|enum)\s+([A-Za-z_]\w*)(?:\s*<[^{]*?>)?(?:\s+extends\s+(.+?))?(?:\s+implements\s+(.+?))?\s*(?:\{.*)?$/;
+const MAX_DECLARATION_LINE_LENGTH = 2000;
 const MODIFIER = '(?:public|protected|private|static|final|abstract|synchronized)';
 const RETURN_TYPE = '(?:def|(?:void|boolean|byte|char|short|int|long|float|double|[A-Z][\\w.]*(?:<[^()]*>)?)(?:\\[\\])*)';
 const METHOD_LINE_RE = new RegExp(
@@ -95,6 +98,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 	const openClasses: ParsedClassSymbol[] = [];
 	const enumConstants: ParsedEnumConstant[] = [];
 	const constructors: ParsedConstructor[] = [];
+	const constructorPatterns = new Map<ParsedClassSymbol, RegExp>();
 	let enumReadingConstants: ParsedClassSymbol | undefined;
 	let currentClassFqn = scriptClassFqn;
 	let lineOffset = 0;
@@ -108,7 +112,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 			currentClassFqn = openClasses[openClasses.length - 1]?.fqn ?? scriptClassFqn;
 		}
 		const trimmed = line.trim();
-		if (!trimmed || trimmed.startsWith('//')) {
+		if (!trimmed || trimmed.startsWith('//') || line.length > MAX_DECLARATION_LINE_LENGTH) {
 			continue;
 		}
 
@@ -133,6 +137,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 			};
 			classes.push(symbol);
 			openClasses.push(symbol);
+			constructorPatterns.set(symbol, constructorPattern(simpleName));
 			currentClassFqn = fqn;
 			if (kind === 'enum') {
 				const bodyStart = line.indexOf('{', column);
@@ -145,8 +150,10 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 		}
 
 		const owner = openClasses[openClasses.length - 1];
-		if (owner && depths[i] === owner.bodyDepth && parenDepths[i] === 0) {
-			const constructorColumn = constructorColumnFor(line, owner.simpleName);
+		const ownerConstructorPattern = owner ? constructorPatterns.get(owner) : undefined;
+		let constructorColumn: number | undefined;
+		if (owner && ownerConstructorPattern && depths[i] === owner.bodyDepth && parenDepths[i] === 0) {
+			constructorColumn = constructorColumnFor(line, ownerConstructorPattern);
 			if (constructorColumn !== undefined) {
 				constructors.push({
 					classFqn: owner.fqn,
@@ -162,7 +169,7 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 				enumReadingConstants = undefined;
 			} else if (depths[i] === owner.bodyDepth && parenDepths[i] === 0) {
 				if (METHOD_LINE_RE.test(line) || FIELD_LINE_RE.test(line) || TYPED_FIELD_RE.test(line) || SERVICE_INJECT_RE.test(line)
-					|| constructorColumnFor(line, owner.simpleName) !== undefined) {
+					|| constructorColumn !== undefined) {
 					enumReadingConstants = undefined;
 				} else {
 					if (readEnumConstants(line, originalLines[i] ?? line, 0, i, owner, enumConstants)) {
@@ -242,8 +249,6 @@ export function parseDocumentSymbols(text: string, sourcePath?: string, maskedTe
 	return { packageName, classes, methods, fields, enumConstants, constructors };
 }
 
-const MAX_HIERARCHY_DEPTH = 12;
-
 export interface FieldLocation {
 	filePath: string;
 	line: number;
@@ -255,21 +260,26 @@ export function findFieldInClassHierarchy(
 	findEntries: (className: string) => Array<{ filePath: string }>,
 	className: string,
 	fieldName: string,
+	referencingContent?: string,
 	visited: Set<string> = new Set(),
 	depth = 0
 ): FieldLocation[] {
-	if (!className || visited.has(className) || depth > MAX_HIERARCHY_DEPTH) {
+	if (!className || depth > MAX_HIERARCHY_DEPTH) {
 		return [];
 	}
-	visited.add(className);
 
-	for (const entry of findEntries(className)) {
+	for (const entry of preferReferencedEntries(findEntries(className), className, readFile, referencingContent)) {
+		if (visited.has(entry.filePath)) {
+			continue;
+		}
+		visited.add(entry.filePath);
 		const content = readFile(entry.filePath);
 		if (!content) {
 			continue;
 		}
 		const parsed = parseDocumentSymbols(content, entry.filePath);
-		const field = parsed.fields.find(candidate => candidate.classMember && candidate.name === fieldName);
+		const field = parsed.fields.find(candidate => candidate.classMember && candidate.name === fieldName
+			&& simpleNameFromFqn(candidate.classFqn) === className);
 		if (field) {
 			return [{ filePath: entry.filePath, line: field.line, column: field.column }];
 		}
@@ -277,7 +287,7 @@ export function findFieldInClassHierarchy(
 		const ownClass = parsed.classes.find(cls => cls.simpleName === className);
 		const parents = [...(ownClass?.extendsTypes ?? []), ...(ownClass?.implementsTypes ?? [])];
 		for (const parent of parents) {
-			const inherited = findFieldInClassHierarchy(readFile, findEntries, parent, fieldName, visited, depth + 1);
+			const inherited = findFieldInClassHierarchy(readFile, findEntries, simpleNameFromFqn(parent), fieldName, content, visited, depth + 1);
 			if (inherited.length > 0) {
 				return inherited;
 			}
@@ -285,6 +295,16 @@ export function findFieldInClassHierarchy(
 	}
 
 	return [];
+}
+
+export function constructorDeclarations(symbols: ParsedDocumentSymbols, sourcePath: string): ParsedMethod[] {
+	return symbols.constructors.map(constructor => ({
+		name: simpleNameFromFqn(constructor.classFqn),
+		line: constructor.line,
+		column: constructor.column,
+		classFqn: constructor.classFqn,
+		sourcePath
+	}));
 }
 
 export function serviceNameToClassName(serviceName: string): string {
@@ -305,7 +325,9 @@ function readEnumConstants(
 ): boolean {
 	const segment = line.slice(from);
 	const terminator = topLevelIndexOf(segment, ';');
-	const constantsText = terminator >= 0 ? segment.slice(0, terminator) : segment;
+	const bodyEnd = enclosingBlockEnd(segment);
+	const ends = [terminator, bodyEnd].filter(index => index >= 0);
+	const constantsText = ends.length > 0 ? segment.slice(0, Math.min(...ends)) : segment;
 	let offset = 0;
 	for (const part of splitTopLevel(constantsText)) {
 		const match = part.match(/^\s*(?:@[\w.]+(?:\([^)]*\))?\s+)*([A-Za-z_]\w*)\s*(?=\(|\{|\}|$)/);
@@ -321,7 +343,7 @@ function readEnumConstants(
 		}
 		offset += part.length + 1;
 	}
-	return terminator >= 0 || segment.includes('}');
+	return ends.length > 0;
 }
 
 function splitTopLevel(text: string): string[] {
@@ -358,6 +380,22 @@ function topLevelIndexOf(text: string, target: string): number {
 	return -1;
 }
 
+function enclosingBlockEnd(text: string): number {
+	let depth = 0;
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (ch === '(' || ch === '{' || ch === '[') {
+			depth++;
+		} else if (ch === ')' || ch === '}' || ch === ']') {
+			if (depth === 0 && ch === '}') {
+				return i;
+			}
+			depth = Math.max(0, depth - 1);
+		}
+	}
+	return -1;
+}
+
 function argumentCountAt(maskedLine: string, originalLine: string, afterName: number): number | undefined {
 	const openParen = afterName + (maskedLine.slice(afterName).match(/^\s*/)?.[0].length ?? 0);
 	if (maskedLine[openParen] !== '(') {
@@ -379,8 +417,12 @@ function argumentCountAt(maskedLine: string, originalLine: string, afterName: nu
 	return undefined;
 }
 
-function constructorColumnFor(line: string, className: string): number | undefined {
-	const match = line.match(new RegExp(`^(\\s*(?:(?:public|protected|private)\\s+)?)${className}\\s*\\(`));
+function constructorPattern(className: string): RegExp {
+	return new RegExp(`^(\\s*(?:(?:public|protected|private)\\s+)?)${escapeRegExp(className)}\\s*\\(`);
+}
+
+function constructorColumnFor(line: string, pattern: RegExp): number | undefined {
+	const match = line.match(pattern);
 	return match ? match[1].length : undefined;
 }
 

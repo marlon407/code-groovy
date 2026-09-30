@@ -38,12 +38,8 @@ export class CallSiteIndexStore {
 		this.filePaths.length = 0;
 	}
 
-	lookup(methodName: string, receiverName?: string): CallSiteRecord[] {
-		const all = this.byMethodName.get(methodName) ?? [];
-		if (!receiverName) {
-			return all;
-		}
-		return all.filter(record => record.receiverName === receiverName);
+	lookup(methodName: string): CallSiteRecord[] {
+		return this.byMethodName.get(methodName) ?? [];
 	}
 
 	lookupByReceiver(receiverName: string): CallSiteRecord[] {

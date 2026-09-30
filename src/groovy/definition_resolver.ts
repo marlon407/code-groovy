@@ -1,5 +1,6 @@
 import * as fs from 'fs';
-import { ClassIndexStore } from './class_index_store';
+import { MAX_HIERARCHY_DEPTH } from './class_parser';
+import { ClassIndexStore, simpleNameFromFqn } from './class_index_store';
 import { resolveDeclarationPosition } from './declaration_position';
 import { GrailsArtifactIndex } from './grails_artifact_index';
 import {
@@ -13,7 +14,7 @@ import { resolveJarTypeDefinition } from './sources_jar_resolver';
 import { candidateClassNamesForReceiver, serviceBeanToClassName } from './service_bean';
 import { findGrailsSourceForFqn } from './fqn_source_resolver';
 import { findFieldInClassHierarchy, ParsedDocumentSymbols, ParsedEnumConstant, parseDocumentSymbols } from './symbol_parser';
-import { resolveReceiverType } from './call_site_extractor';
+import { resolveChainRootType, resolveReceiverType } from './call_site_extractor';
 
 export interface DefinitionTarget {
 	uri: string;
@@ -111,7 +112,7 @@ function resolveMethodTargets(
 			const declaredType = resolveReceiverType(context.documentText, context.line, receiver);
 			const candidates = [...new Set([
 				...(chainType ? [chainType] : []),
-				...(declaredType ? [simpleTypeName(declaredType)] : []),
+				...(declaredType ? [simpleNameFromFqn(declaredType)] : []),
 				...candidateClassNamesForReceiver(receiver)
 			])];
 			for (const className of candidates) {
@@ -194,7 +195,7 @@ function resolveFieldTargets(context: DefinitionContext, before: string): Defini
 	const declaredType = declaredFieldTypeName(context.documentText, context.sourcePath, receiver);
 	const candidates = [...new Set([
 		...(chainType ? [chainType] : []),
-		...(scopedType ? [simpleTypeName(scopedType)] : []),
+		...(scopedType ? [simpleNameFromFqn(scopedType)] : []),
 		...(declaredType ? [declaredType] : []),
 		...candidateClassNamesForReceiver(receiver)
 	])];
@@ -242,7 +243,8 @@ function findFieldInArtifactHierarchy(
 		filePath => readFileSafe(filePath),
 		name => findClassEntries(context, name),
 		className,
-		fieldName
+		fieldName,
+		context.documentText
 	);
 	return locations.map(loc => ({
 		uri: loc.filePath,
@@ -441,7 +443,7 @@ function resolveConstantTargets(context: DefinitionContext, before: string): Def
 		const content = readFileSafe(entry.filePath);
 		const constant = content
 			? parseDocumentSymbols(content, entry.filePath).enumConstants.find(candidate =>
-				candidate.name === name && simpleTypeName(candidate.enumFqn) === receiver)
+				candidate.name === name && simpleNameFromFqn(candidate.enumFqn) === receiver)
 			: undefined;
 		if (constant) {
 			return [{ uri: entry.filePath, line: constant.line, column: constant.column, label: `${receiver}.${name}` }];
@@ -458,10 +460,10 @@ function enumConstantDeclarationTarget(
 	const constructors = symbols.constructors.filter(candidate => candidate.classFqn === constant.enumFqn);
 	const constructor = constructors.find(candidate => candidate.parameterCount === constant.argumentCount) ?? constructors[0];
 	if (constructor) {
-		return { uri: context.sourcePath, line: constructor.line, column: constructor.column, label: simpleTypeName(constant.enumFqn) };
+		return { uri: context.sourcePath, line: constructor.line, column: constructor.column, label: simpleNameFromFqn(constant.enumFqn) };
 	}
 	const enumClass = symbols.classes.find(cls => cls.fqn === constant.enumFqn);
-	return { uri: context.sourcePath, line: enumClass?.line ?? 0, column: enumClass?.column ?? 0, label: simpleTypeName(constant.enumFqn) };
+	return { uri: context.sourcePath, line: enumClass?.line ?? 0, column: enumClass?.column ?? 0, label: simpleNameFromFqn(constant.enumFqn) };
 }
 
 function getReceiverName(beforeMethod: string): string | undefined {
@@ -475,7 +477,8 @@ function resolveReceiverChainType(context: DefinitionContext, before: string): s
 		return undefined;
 	}
 	const segments = chain.split(/\s*[?*]?\.\s*/).filter(Boolean);
-	let typeName = chainRootType(context, segments[0]);
+	const rootType = resolveChainRootType(context.documentText, context.line, segments[0], context.sourcePath);
+	let typeName = rootType ? simpleNameFromFqn(rootType) : undefined;
 	for (const segment of segments.slice(1)) {
 		if (!typeName) {
 			return undefined;
@@ -485,44 +488,38 @@ function resolveReceiverChainType(context: DefinitionContext, before: string): s
 	return typeName;
 }
 
-function chainRootType(context: DefinitionContext, root: string): string | undefined {
-	if (root === 'this') {
-		return parseTypeDeclaration(context.documentText)?.name;
-	}
-	if (/^[A-Z]/.test(root)) {
-		return root;
-	}
-	const declared = resolveReceiverType(context.documentText, context.line, root);
-	return declared ? simpleTypeName(declared) : undefined;
-}
-
 function fieldTypeInHierarchy(
 	context: DefinitionContext,
 	className: string,
 	fieldName: string,
 	referencingContent: string,
+	visited: Set<string> = new Set(),
 	depth = 0
 ): string | undefined {
-	if (depth > 12) {
+	if (depth > MAX_HIERARCHY_DEPTH) {
 		return undefined;
 	}
 	for (const entry of preferReferencedEntries(findClassEntries(context, className), className, readFileSafe, referencingContent)) {
+		if (visited.has(entry.filePath)) {
+			continue;
+		}
+		visited.add(entry.filePath);
 		const content = readFileSafe(entry.filePath);
 		if (!content) {
 			continue;
 		}
 		const parsed = parseDocumentSymbols(content, entry.filePath);
-		if (parsed.enumConstants.some(constant => constant.name === fieldName && simpleTypeName(constant.enumFqn) === className)) {
+		if (parsed.enumConstants.some(constant => constant.name === fieldName && simpleNameFromFqn(constant.enumFqn) === className)) {
 			return className;
 		}
 		const field = parsed.fields.find(candidate => candidate.classMember && candidate.name === fieldName
-			&& simpleTypeName(candidate.classFqn) === className);
+			&& simpleNameFromFqn(candidate.classFqn) === className);
 		if (field) {
-			return simpleTypeName(field.typeName);
+			return simpleNameFromFqn(field.typeName);
 		}
 		const ownClass = parsed.classes.find(cls => cls.simpleName === className);
 		for (const parent of [...(ownClass?.extendsTypes ?? []), ...(ownClass?.implementsTypes ?? [])]) {
-			const inherited = fieldTypeInHierarchy(context, simpleTypeName(parent), fieldName, content, depth + 1);
+			const inherited = fieldTypeInHierarchy(context, simpleNameFromFqn(parent), fieldName, content, visited, depth + 1);
 			if (inherited) {
 				return inherited;
 			}
@@ -541,8 +538,4 @@ function readFileSafe(filePath: string): string | undefined {
 
 function escapeRegex(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function simpleTypeName(typeName: string): string {
-	return typeName.includes('.') ? typeName.slice(typeName.lastIndexOf('.') + 1) : typeName;
 }

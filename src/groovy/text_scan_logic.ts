@@ -7,10 +7,19 @@ export function isImportLine(line: string): boolean {
 }
 
 type MaskFrame =
-	| { kind: 'string'; delimiter: string; interpolates: boolean }
+	| { kind: 'string'; delimiter: string; interpolates: boolean; multiline: boolean }
 	| { kind: 'interpolation'; depth: number };
 
+interface CommentRange {
+	start: number;
+	end: number;
+}
+
 export function maskNonCode(text: string): string {
+	return scanNonCode(text);
+}
+
+function scanNonCode(text: string, comments?: CommentRange[]): string {
 	const pieces: string[] = [];
 	let copiedUntil = 0;
 	let blankStart = 0;
@@ -40,7 +49,7 @@ export function maskNonCode(text: string): string {
 	while (i < text.length) {
 		const top = stack[stack.length - 1];
 		if (top?.kind === 'string') {
-			const stop = nextIndex(top.interpolates ? DOUBLE_QUOTED_STOP_RE : SINGLE_QUOTED_STOP_RE, text, i);
+			const stop = nextIndex(stringStopRe(top), text, i);
 			if (stop > i) {
 				blank(i, stop);
 				i = stop;
@@ -63,7 +72,7 @@ export function maskNonCode(text: string): string {
 				stack.push({ kind: 'interpolation', depth: 0 });
 				continue;
 			}
-			if (top.delimiter.length === 1 && text[i] === '\n') {
+			if (!top.multiline && text[i] === '\n') {
 				stack.pop();
 				i++;
 				continue;
@@ -83,6 +92,7 @@ export function maskNonCode(text: string): string {
 		if (ch === '/' && next === '/') {
 			const lineEnd = text.indexOf('\n', i);
 			const stop = lineEnd === -1 ? text.length : lineEnd;
+			comments?.push({ start: i, end: stop + 1 });
 			blank(i, stop);
 			i = stop;
 			continue;
@@ -90,6 +100,7 @@ export function maskNonCode(text: string): string {
 		if (ch === '/' && next === '*') {
 			const close = text.indexOf('*/', i + 2);
 			const stop = close === -1 ? text.length : close + 2;
+			comments?.push({ start: i, end: close === -1 ? text.length + 1 : stop });
 			blank(i, stop);
 			i = stop;
 			continue;
@@ -97,8 +108,14 @@ export function maskNonCode(text: string): string {
 		if (ch === '"' || ch === "'") {
 			const delimiter = text.startsWith(ch.repeat(3), i) ? ch.repeat(3) : ch;
 			blank(i, i + delimiter.length);
-			stack.push({ kind: 'string', delimiter, interpolates: ch === '"' });
+			stack.push({ kind: 'string', delimiter, interpolates: ch === '"', multiline: delimiter.length === 3 });
 			i += delimiter.length;
+			continue;
+		}
+		if (ch === '/' && opensSlashyString(text, i)) {
+			blank(i, i + 1);
+			stack.push({ kind: 'string', delimiter: '/', interpolates: true, multiline: true });
+			i++;
 			continue;
 		}
 		if (top?.kind === 'interpolation') {
@@ -125,6 +142,30 @@ const CODE_STOP_RE = /[/"']/g;
 const INTERPOLATION_STOP_RE = /[/"'{}]/g;
 const DOUBLE_QUOTED_STOP_RE = /[\\"$\n]/g;
 const SINGLE_QUOTED_STOP_RE = /[\\'\n]/g;
+const SLASHY_STOP_RE = /[\\/$]/g;
+const SLASHY_OPENER_BEFORE = new Set(['', '~', '=', '(', ',', '[', ':', '{', ';', '!', '&', '|', '?', '\n']);
+
+function stringStopRe(frame: { delimiter: string; interpolates: boolean }): RegExp {
+	if (frame.delimiter === '/') {
+		return SLASHY_STOP_RE;
+	}
+	return frame.interpolates ? DOUBLE_QUOTED_STOP_RE : SINGLE_QUOTED_STOP_RE;
+}
+
+function opensSlashyString(text: string, index: number): boolean {
+	const next = text[index + 1];
+	if (next === '/' || next === '*' || next === undefined || next === '\n' || next === ' ') {
+		return false;
+	}
+	let i = index - 1;
+	while (i >= 0 && (text[i] === ' ' || text[i] === '\t' || text[i] === '\r')) {
+		i--;
+	}
+	if (i >= 2 && /\breturn$/.test(text.slice(Math.max(0, i - 6), i + 1))) {
+		return true;
+	}
+	return SLASHY_OPENER_BEFORE.has(i < 0 ? '' : text[i]);
+}
 
 function nextIndex(re: RegExp, text: string, from: number): number {
 	re.lastIndex = from;
@@ -213,37 +254,9 @@ export function closingBraceLine(maskedText: string, fromOffset: number, fromLin
 }
 
 export function isInsideComment(text: string, offset: number): boolean {
-	let i = 0;
-	while (i < offset && i < text.length) {
-		const ch = text[i];
-		const next = text[i + 1];
-		if (ch === '/' && next === '/') {
-			const lineEnd = text.indexOf('\n', i);
-			if (lineEnd === -1 || lineEnd >= offset) {
-				return true;
-			}
-			i = lineEnd + 1;
-			continue;
-		}
-		if (ch === '/' && next === '*') {
-			const close = text.indexOf('*/', i + 2);
-			if (close === -1 || close + 2 > offset) {
-				return true;
-			}
-			i = close + 2;
-			continue;
-		}
-		if (ch === '"' || ch === "'") {
-			const end = findStringEnd(text, i, ch);
-			if (end >= offset) {
-				return false;
-			}
-			i = end;
-			continue;
-		}
-		i++;
-	}
-	return false;
+	const comments: CommentRange[] = [];
+	scanNonCode(text, comments);
+	return comments.some(range => offset >= range.start && offset < range.end);
 }
 
 export function isInsideDocLink(line: string, character: number): boolean {
@@ -255,23 +268,4 @@ export function isInsideDocLink(line: string, character: number): boolean {
 		}
 	}
 	return false;
-}
-
-function findStringEnd(text: string, start: number, quote: string): number {
-	const delimiter = text.startsWith(quote.repeat(3), start) ? quote.repeat(3) : quote;
-	let j = start + delimiter.length;
-	while (j < text.length) {
-		if (text[j] === '\\') {
-			j += 2;
-			continue;
-		}
-		if (text.startsWith(delimiter, j)) {
-			return j + delimiter.length;
-		}
-		if (delimiter.length === 1 && text[j] === '\n') {
-			return j;
-		}
-		j++;
-	}
-	return text.length;
 }

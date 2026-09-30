@@ -1,3 +1,5 @@
+export const MAX_HIERARCHY_DEPTH = 12;
+
 export interface ParsedType {
 	simpleName: string;
 	fqn: string;

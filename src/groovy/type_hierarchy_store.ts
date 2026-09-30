@@ -1,3 +1,4 @@
+import { simpleNameFromFqn } from './class_index_store';
 import { ParsedMethod } from './symbol_parser';
 
 export interface HierarchyMember {
@@ -78,7 +79,7 @@ export class TypeHierarchyStore {
 
 	memberType(fqn: string, memberName: string): string | undefined {
 		if (this.enumConstantsByClass.get(fqn)?.has(memberName)) {
-			return simpleName(fqn);
+			return simpleNameFromFqn(fqn);
 		}
 		return this.fieldTypesByClass.get(fqn)?.get(memberName);
 	}
@@ -164,8 +165,4 @@ function push<T>(map: Map<string, T[]>, key: string, value: T): void {
 	} else {
 		map.set(key, [value]);
 	}
-}
-
-function simpleName(fqn: string): string {
-	return fqn.includes('.') ? fqn.slice(fqn.lastIndexOf('.') + 1) : fqn;
 }

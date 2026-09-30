@@ -1,11 +1,10 @@
 import { ParsedClassSymbol, ParsedDocumentSymbols, ParsedMethod, parseDocumentSymbols } from './symbol_parser';
 import { braceDepthAtLineStarts, isImportLine, maskNonCode, parenDepthAtLineStarts } from './text_scan_logic';
 
-export const CHAINED_RECEIVER = '.';
-
 export interface CallSiteRecord {
 	methodName: string;
 	receiverName: string | undefined;
+	receiverKind?: 'chain';
 	receiverType?: string;
 	receiverRootType?: string;
 	receiverPath?: string[];
@@ -13,6 +12,8 @@ export interface CallSiteRecord {
 	sourcePath: string;
 	line: number;
 	column: number;
+	receiverLine?: number;
+	receiverColumn?: number;
 }
 
 export interface SourceAnalysis {
@@ -26,6 +27,8 @@ interface ReceiverDeclaration {
 }
 
 type ReceiverTypeResolver = (receiverName: string, line: number) => string | undefined;
+
+export type ReceiverBefore = { kind: 'name'; name: string; offset: number } | { kind: 'chain' };
 
 const CALL_SITE_RE = /\b(?:([A-Za-z_]\w*)\s*[?*]?\.\s*)?([A-Za-z_]\w*)\s*([({])/g;
 const TYPED_DECLARATION_RE = /\b([A-Z]\w*)(?:<[^()]*?>)?(?:\[\])*\s+([a-z_]\w*)(?=\s*(?:[=,;)]|->|:(?!:)|$)|\s+in\b)/g;
@@ -50,10 +53,6 @@ export function intern(value: string): string {
 	const copy = Buffer.from(value, 'utf8').toString('utf8');
 	internPool.set(copy, copy);
 	return copy;
-}
-
-export function extractCallSites(text: string, sourcePath: string): CallSiteRecord[] {
-	return analyzeSource(text, sourcePath).callSites;
 }
 
 export function analyzeSource(
@@ -87,14 +86,16 @@ export function analyzeSource(
 		while ((match = CALL_SITE_RE.exec(line)) !== null) {
 			const [, capturedReceiver, methodName, delimiter] = match;
 			const methodStart = line.lastIndexOf(methodName, match.index + match[0].length - 1);
-			const receiverName = capturedReceiver ?? receiverBefore(maskedText, lineStarts[lineNo] + methodStart);
-			if (delimiter === '{' && !receiverName) {
+			const previousReceiver = capturedReceiver === undefined ? receiverBefore(maskedText, lineStarts[lineNo] + methodStart) : undefined;
+			const opaqueChain = previousReceiver?.kind === 'chain';
+			const receiverName = capturedReceiver ?? (previousReceiver?.kind === 'name' ? previousReceiver.name : undefined);
+			if (delimiter === '{' && !receiverName && !opaqueChain) {
 				continue;
 			}
 			if (RESERVED_WORDS.has(methodName)) {
 				continue;
 			}
-			if (!receiverName && line.charAt(methodStart - 1) === '@') {
+			if (!receiverName && !opaqueChain && line.charAt(methodStart - 1) === '@') {
 				continue;
 			}
 			const receiverOffset = lineStarts[lineNo] + match.index;
@@ -104,15 +105,21 @@ export function analyzeSource(
 			const receiverType = !chained && receiverName && /^[a-z_]/.test(receiverName) && receiverName !== 'this'
 				? resolveType(receiverName, lineNo)
 				: undefined;
+			const receiverPosition = capturedReceiver !== undefined
+				? { line: lineNo, column: match.index }
+				: previousReceiver?.kind === 'name' ? positionAt(lineStarts, lineNo, previousReceiver.offset) : undefined;
 			callSites.push({
 				methodName: intern(methodName),
 				receiverName: receiverName === undefined ? undefined : intern(receiverName),
+				...(opaqueChain ? { receiverKind: 'chain' as const } : {}),
 				...(receiverType ? { receiverType: intern(receiverType) } : {}),
 				...(chain && rootType ? { receiverRootType: intern(rootType), receiverPath: chain.slice(1).map(intern) } : {}),
 				...(ownerClass ? { ownerClass: intern(ownerClass) } : {}),
 				sourcePath,
 				line: lineNo,
-				column: methodStart
+				column: methodStart,
+				...(receiverPosition && receiverPosition.line !== lineNo ? { receiverLine: receiverPosition.line } : {}),
+				...(receiverPosition ? { receiverColumn: receiverPosition.column } : {})
 			});
 		}
 	}
@@ -121,11 +128,20 @@ export function analyzeSource(
 }
 
 export function resolveReceiverType(text: string, line: number, receiverName: string): string | undefined {
+	return documentTypeContext(text).resolveType(receiverName, line);
+}
+
+export function resolveChainRootType(text: string, line: number, root: string, sourcePath?: string): string | undefined {
+	const { owners, resolveType } = documentTypeContext(text, sourcePath);
+	return chainRootType(root, line, owners, resolveType);
+}
+
+function documentTypeContext(text: string, sourcePath?: string): { owners: Array<ParsedClassSymbol | undefined>; resolveType: ReceiverTypeResolver } {
 	const maskedText = maskNonCode(text);
-	const parsed = parseDocumentSymbols(text, undefined, maskedText);
+	const parsed = parseDocumentSymbols(text, sourcePath, maskedText);
 	const lines = maskedText.split(LINE_BREAK_RE);
 	const owners = ownerClassByLine(parsed.classes, lines.length);
-	return createReceiverTypeResolver(lines, maskedText, parsed, owners)(receiverName, line);
+	return { owners, resolveType: createReceiverTypeResolver(lines, maskedText, parsed, owners) };
 }
 
 export function excludeDeclarationCallSites(callSites: CallSiteRecord[], methods: ParsedMethod[]): CallSiteRecord[] {
@@ -135,7 +151,7 @@ export function excludeDeclarationCallSites(callSites: CallSiteRecord[], methods
 			.map(method => declarationKey(method.sourcePath as string, method.line, method.column, method.name))
 	);
 	return callSites.filter(callSite => {
-		if (callSite.receiverName) {
+		if (callSite.receiverName || callSite.receiverKind) {
 			return true;
 		}
 		return !declarationKeys.has(declarationKey(callSite.sourcePath, callSite.line, callSite.column, callSite.methodName));
@@ -159,7 +175,7 @@ export function ownerClassByLine(classes: ParsedClassSymbol[], lineCount: number
 	return owners;
 }
 
-export function receiverBefore(maskedText: string, offset: number): string | undefined {
+export function receiverBefore(maskedText: string, offset: number): ReceiverBefore | undefined {
 	let i = skipWhitespaceBackward(maskedText, offset - 1);
 	if (maskedText[i] !== '.') {
 		return undefined;
@@ -175,9 +191,17 @@ export function receiverBefore(maskedText: string, offset: number): string | und
 	}
 	const identifier = maskedText.slice(i + 1, end);
 	if (!/^[A-Za-z_]\w*$/.test(identifier) || maskedText[skipWhitespaceBackward(maskedText, i)] === '.') {
-		return CHAINED_RECEIVER;
+		return { kind: 'chain' };
 	}
-	return identifier;
+	return { kind: 'name', name: identifier, offset: i + 1 };
+}
+
+function positionAt(lineStarts: number[], fromLine: number, offset: number): { line: number; column: number } {
+	let line = fromLine;
+	while (line > 0 && lineStarts[line] > offset) {
+		line--;
+	}
+	return { line, column: offset - lineStarts[line] };
 }
 
 export function receiverChain(maskedText: string, receiverOffset: number, receiver: string): string[] | undefined {

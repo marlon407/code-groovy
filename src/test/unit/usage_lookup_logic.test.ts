@@ -1,13 +1,17 @@
 import * as assert from 'assert';
 import { CallSiteIndexStore } from '../../groovy/call_site_index_store';
 import { analyzeSource, excludeDeclarationCallSites } from '../../groovy/call_site_extractor';
-import { parseDocumentSymbols } from '../../groovy/symbol_parser';
+import { constructorDeclarations, parseDocumentSymbols } from '../../groovy/symbol_parser';
 import { parseImports, TypeHierarchyStore } from '../../groovy/type_hierarchy_store';
 import {
+	collectUsageLocations,
+	excludePosition,
 	findDeclarationTarget,
 	findReferenceTarget,
 	grailsFieldNameForClass,
-	resolveUsages
+	resolveUsages,
+	UsageLocation,
+	UsageResolution
 } from '../../groovy/usage_lookup_logic';
 
 const WIDGET_SERVICE = '/tmp/WidgetService.groovy';
@@ -19,7 +23,8 @@ function buildIndex(files: Record<string, string>): CallSiteIndexStore {
 	for (const [sourcePath, text] of Object.entries(files)) {
 		const analysis = analyzeSource(text, sourcePath);
 		callSites.push(...analysis.callSites);
-		methods.push(...parseDocumentSymbols(text, sourcePath).methods);
+		const symbols = parseDocumentSymbols(text, sourcePath);
+		methods.push(...symbols.methods, ...constructorDeclarations(symbols, sourcePath));
 		index.addTypeMentions(sourcePath, analysis.typeMentions);
 	}
 	index.add(excludeDeclarationCallSites(callSites, methods));
@@ -183,7 +188,7 @@ suite('resolveUsages — methods', () => {
 			`${WIDGET_SERVICE}:1`,
 			`${WIDGET_SERVICE}:2`
 		]);
-		assert.deepStrictEqual(resolution.textScans, []);
+		assert.strictEqual(resolution.textScan, undefined);
 	});
 
 	test('keeps static calls and calls through variables typed with the class, next to internal calls', () => {
@@ -199,7 +204,7 @@ suite('resolveUsages — methods', () => {
 		const index = buildIndex({ '/tmp/Order.groovy': 'order.save(flush: true)\ncustomer.save()' });
 		const resolution = resolveUsages({ kind: 'method', name: 'save', className: 'WidgetService' }, index, 'navigate');
 		assert.deepStrictEqual(resolution.records, []);
-		assert.deepStrictEqual(resolution.textScans, []);
+		assert.strictEqual(resolution.textScan, undefined);
 	});
 
 	test('decides by the declared type when there is one, even if the variable is named like the class field', () => {
@@ -221,9 +226,9 @@ suite('resolveUsages — methods', () => {
 
 	test('asks for a scoped text scan only while the index is not ready', () => {
 		const empty = new CallSiteIndexStore();
-		assert.deepStrictEqual(resolveUsages(target, empty, 'navigate').textScans, [{ receiverFieldName: 'widgetService' }]);
+		assert.deepStrictEqual(resolveUsages(target, empty, 'navigate').textScan, { scope: 'workspace', receiverFieldName: 'widgetService' });
 		empty.add([]);
-		assert.deepStrictEqual(resolveUsages(target, empty, 'navigate').textScans, []);
+		assert.strictEqual(resolveUsages(target, empty, 'navigate').textScan, undefined);
 	});
 });
 
@@ -238,7 +243,7 @@ suite('resolveUsages — classes', () => {
 	test('combines static/closure calls and constructor calls', () => {
 		const resolution = resolveUsages({ kind: 'class', name: 'Widget' }, index, 'navigate');
 		assert.deepStrictEqual(describe(resolution.records), ['/tmp/A.groovy:0', '/tmp/A.groovy:1', '/tmp/A.groovy:2']);
-		assert.deepStrictEqual(resolution.textScans, []);
+		assert.strictEqual(resolution.textScan, undefined);
 	});
 
 	test('recognizes untyped service injection through the Grails field name', () => {
@@ -249,15 +254,15 @@ suite('resolveUsages — classes', () => {
 	test('scans only the files that mention a class used only as a type, ignoring imports and comments', () => {
 		const resolution = resolveUsages({ kind: 'class', name: 'Invoice' }, index, 'navigate');
 		assert.deepStrictEqual(resolution.records, []);
-		assert.deepStrictEqual(resolution.textScans, [{ files: ['/tmp/C.groovy'] }]);
+		assert.deepStrictEqual(resolution.textScan, { scope: 'files', files: ['/tmp/C.groovy'] });
 	});
 
 	test('skips the text scan entirely when no file mentions the class', () => {
-		assert.deepStrictEqual(resolveUsages({ kind: 'class', name: 'Orphan' }, index, 'navigate').textScans, []);
+		assert.strictEqual(resolveUsages({ kind: 'class', name: 'Orphan' }, index, 'navigate').textScan, undefined);
 	});
 
 	test('scans the mentioning files for Find All References, to include type references', () => {
-		assert.deepStrictEqual(resolveUsages({ kind: 'class', name: 'Widget' }, index, 'references').textScans, [{ files: ['/tmp/A.groovy'] }]);
+		assert.deepStrictEqual(resolveUsages({ kind: 'class', name: 'Widget' }, index, 'references').textScan, { scope: 'files', files: ['/tmp/A.groovy'] });
 	});
 });
 
@@ -460,5 +465,97 @@ suite('TypeHierarchyStore', () => {
 
 	test('parses imports, skipping static ones and aliases', () => {
 		assert.deepStrictEqual(parseImports('import a.b.C\nimport static a.b.C.d\nimport x.y.*\nimport m.N as Alias'), ['a.b.C', 'x.y.*', 'm.N']);
+	});
+});
+
+suite('constructors without modifiers', () => {
+	const kindPath = '/tmp/WidgetKind.groovy';
+	const kindSource = [
+		'enum WidgetKind {',
+		'    A("a")',
+		'    final String code',
+		'    WidgetKind(String code) {',
+		'        this.code = code',
+		'    }',
+		'}'
+	].join('\n');
+	const index = buildIndex({ [kindPath]: kindSource, '/tmp/Use.groovy': 'def k = new WidgetKind("b")\nWidgetKind.values()' });
+
+	test('treats the constructor name as its class', () => {
+		assert.deepStrictEqual(findDeclarationTarget(kindSource, kindPath, 3, 'WidgetKind', 4), { kind: 'class', name: 'WidgetKind' });
+	});
+
+	test('does not index the constructor declaration as a call of the class', () => {
+		const resolution = resolveUsages({ kind: 'class', name: 'WidgetKind' }, index, 'navigate');
+		assert.deepStrictEqual(describe(resolution.records), ['/tmp/Use.groovy:0', '/tmp/Use.groovy:1']);
+	});
+});
+
+suite('collectUsageLocations', () => {
+	const noScan = async (): Promise<UsageLocation[]> => [];
+	const describeLocations = (locations: UsageLocation[]) => locations.map(location => `${location.sourcePath}:${location.line}:${location.column}:${location.length}`);
+
+	test('keeps a recursive call on the declaration line and drops only the declaration itself', async () => {
+		const sourcePath = '/tmp/Math.groovy';
+		const source = 'class Math {\n    int fact(int n) { n <= 1 ? 1 : n * fact(n - 1) }\n}';
+		const index = buildIndex({ [sourcePath]: source });
+		const target = findDeclarationTarget(source, sourcePath, 1, 'fact', 8)!;
+		const resolution = resolveUsages(target, index, 'navigate');
+		const recursiveColumn = source.split('\n')[1].lastIndexOf('fact');
+		const locations = await collectUsageLocations(target, resolution, 'navigate', 'fact', noScan, { sourcePath, line: 1, column: 8 });
+		assert.deepStrictEqual(describeLocations(locations), [`${sourcePath}:1:${recursiveColumn}:4`]);
+	});
+
+	test('points class usages at the receiver instead of the called method, also on a previous line', async () => {
+		const index = buildIndex({
+			'/tmp/Use.groovy': 'Widget.get(1)\nwidgetService.rename(2)\nWidget\n    .where { true }\nnew Widget()'
+		});
+		const target = { kind: 'class' as const, name: 'Widget' };
+		const widgetLocations = await collectUsageLocations(target, resolveUsages(target, index, 'navigate'), 'navigate', 'Widget', noScan);
+		assert.deepStrictEqual(describeLocations(widgetLocations).sort(), ['/tmp/Use.groovy:0:0:6', '/tmp/Use.groovy:2:0:6', '/tmp/Use.groovy:4:4:6']);
+		const serviceTarget = { kind: 'class' as const, name: 'WidgetService' };
+		const serviceLocations = await collectUsageLocations(serviceTarget, resolveUsages(serviceTarget, index, 'navigate'), 'navigate', 'WidgetService', noScan);
+		assert.deepStrictEqual(describeLocations(serviceLocations), ['/tmp/Use.groovy:1:0:13']);
+	});
+
+	test('merges type references from the text scan with the call sites for Find All References', async () => {
+		const index = buildIndex({ '/tmp/A.groovy': 'Widget.get(1)\nWidget w = build()' });
+		const target = { kind: 'class' as const, name: 'Widget' };
+		const scanned: UsageLocation[] = [
+			{ sourcePath: '/tmp/A.groovy', line: 0, column: 0, length: 6 },
+			{ sourcePath: '/tmp/A.groovy', line: 1, column: 0, length: 6 }
+		];
+		const locations = await collectUsageLocations(target, resolveUsages(target, index, 'references'), 'references', 'Widget', async () => scanned);
+		assert.deepStrictEqual(describeLocations(locations), ['/tmp/A.groovy:0:0:6', '/tmp/A.groovy:1:0:6']);
+	});
+
+	test('scans the workspace for a method only when the index has no scoped call', async () => {
+		const target = { kind: 'method' as const, name: 'rename', className: 'WidgetService' };
+		const scans: unknown[] = [];
+		const scanner = async (_word: string, scan: unknown) => {
+			scans.push(scan);
+			return [{ sourcePath: '/tmp/B.groovy', line: 3, column: 14, length: 6 }];
+		};
+		const locations = await collectUsageLocations(target, resolveUsages(target, new CallSiteIndexStore(), 'navigate'), 'navigate', 'rename', scanner);
+		assert.deepStrictEqual(scans, [{ scope: 'workspace', receiverFieldName: 'widgetService' }]);
+		assert.deepStrictEqual(describeLocations(locations), ['/tmp/B.groovy:3:14:6']);
+	});
+
+	test('falls back to the supertype declarations when nothing else is left', async () => {
+		const target = { kind: 'method' as const, name: 'greet', className: 'Child' };
+		const resolution: UsageResolution = { records: [], superDeclarations: [{ sourcePath: '/tmp/Base.groovy', line: 2, column: 9 }] };
+		const locations = await collectUsageLocations(target, resolution, 'navigate', 'greet', noScan);
+		assert.deepStrictEqual(describeLocations(locations), ['/tmp/Base.groovy:2:9:5']);
+	});
+});
+
+suite('excludePosition', () => {
+	test('drops only the target at the cursor, keeping a one-line enum reached from its constant', () => {
+		const sourcePath = '/tmp/Kind.groovy';
+		const targets = [
+			{ uri: sourcePath, line: 0, column: 5 },
+			{ uri: sourcePath, line: 0, column: 12 }
+		];
+		assert.deepStrictEqual(excludePosition(targets, { sourcePath, line: 0, column: 12 }), [{ uri: sourcePath, line: 0, column: 5 }]);
 	});
 });

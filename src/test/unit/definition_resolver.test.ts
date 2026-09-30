@@ -5,9 +5,10 @@ import { ClassIndexStore } from '../../groovy/class_index_store';
 import { resolveDefinitions } from '../../groovy/definition_resolver';
 import { GrailsArtifactIndex, indexGroovyFile } from '../../groovy/grails_artifact_index';
 import { candidateClassNamesForReceiver, serviceBeanToClassName } from '../../groovy/service_bean';
-import { findMethodInClassHierarchy, findMethodInText, listMethodsInClassHierarchy, parseTypeDeclaration } from '../../groovy/method_navigation_logic';
+import { findMethodInClassHierarchy, findMethodInText, listMethodsInClassHierarchy, parseTypeDeclaration, preferReferencedEntries } from '../../groovy/method_navigation_logic';
 import { buildImportMap, resolveSimpleTypeName } from '../../groovy/type_resolver';
 import { indexWorkspaceDocument } from '../../groovy/workspace_symbol_index';
+import { excludePosition } from '../../groovy/usage_lookup_logic';
 
 const fixturesRoot = path.resolve(__dirname, '../../../src/test/fixtures/groovy');
 
@@ -376,6 +377,14 @@ suite('enum constants and static fields', () => {
 		const targets = at(stateSource, statePath, 3, 'ACTIVE');
 		assert.deepStrictEqual(targets.map(target => [path.basename(target.uri), target.line]), [['WidgetState.groovy', 2]]);
 	});
+
+	test('goes from a constant of a one-line enum to the enum name on the same line, not back to the cursor', () => {
+		const kindPath = path.join(fixturesRoot, 'Mode.groovy');
+		const source = 'enum Mode { ON, OFF }';
+		const wordStart = source.indexOf('OFF');
+		const targets = excludePosition(at(source, kindPath, 0, 'OFF'), { sourcePath: kindPath, line: 0, column: wordStart });
+		assert.deepStrictEqual(targets.map(target => [target.line, target.column]), [[0, source.indexOf('Mode')]]);
+	});
 });
 
 suite('receiver chains', () => {
@@ -473,5 +482,25 @@ suite('listMethodsInClassHierarchy — same-named classes and supertypes', () =>
 
 	test('resolves each same-named class against its own supertype when the document does not pick one', () => {
 		assert.deepStrictEqual(names(), ['build', 'buildAmount', 'buildInstallments', 'buildReference']);
+	});
+});
+
+suite('preferReferencedEntries', () => {
+	const files: Record<string, string> = {
+		'/a/Widget.groovy': 'package a\nclass Widget {}',
+		'/b/Widget.groovy': 'package b\nclass Widget {}'
+	};
+	const entries = [{ filePath: '/a/Widget.groovy' }, { filePath: '/b/Widget.groovy' }];
+	const prefer = (content: string) => preferReferencedEntries(entries, 'Widget', filePath => files[filePath], content).map(entry => entry.filePath);
+
+	test('follows an explicit import, also when it has an alias', () => {
+		assert.deepStrictEqual(prefer('package c\nimport b.Widget\nclass C {}'), ['/b/Widget.groovy']);
+		assert.deepStrictEqual(prefer('package c\nimport b.Widget as W\nclass C {}'), ['/b/Widget.groovy']);
+	});
+
+	test('falls back to the same package and then to wildcard imports', () => {
+		assert.deepStrictEqual(prefer('package a;\nclass C {}'), ['/a/Widget.groovy']);
+		assert.deepStrictEqual(prefer('package c\nimport b.*\nclass C {}'), ['/b/Widget.groovy']);
+		assert.deepStrictEqual(prefer('package c\nclass C {}'), ['/a/Widget.groovy', '/b/Widget.groovy']);
 	});
 });

@@ -25,15 +25,7 @@ suite('call_site_index_store', () => {
 		assert.strictEqual(store.isReady(), true);
 	});
 
-	test('lookup filters by receiver when provided', () => {
-		const store = new CallSiteIndexStore();
-		store.add([record('save', 'partnerSettlement'), record('save', 'otherService')]);
-		const scoped = store.lookup('save', 'partnerSettlement');
-		assert.strictEqual(scoped.length, 1);
-		assert.strictEqual(scoped[0].receiverName, 'partnerSettlement');
-	});
-
-	test('lookup without a receiver returns every match', () => {
+	test('lookup returns every call with that method name', () => {
 		const store = new CallSiteIndexStore();
 		store.add([record('save', 'partnerSettlement'), record('save', 'otherService')]);
 		assert.strictEqual(store.lookup('save').length, 2);

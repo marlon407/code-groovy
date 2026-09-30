@@ -6,9 +6,9 @@ import { resolveGradleProjectRoot } from './classpath_resolver';
 import { resolveGspDefinitions } from '../gsp/gsp_definition_logic';
 import { resolveGroovyTagLibDefinitions } from '../gsp/groovy_taglib_navigation_logic';
 import { ProjectTagLibTag } from '../gsp/taglib_parser';
-import { findWordOccurrences, callSiteToLocation } from './reference_provider';
+import { toVscodeLocation, wordScanner } from './usage_locations';
 import { CallSiteIndexStore } from './call_site_index_store';
-import { findDeclarationTarget, resolveUsages, UsageHierarchy } from './usage_lookup_logic';
+import { collectUsageLocations, excludePosition, findDeclarationTarget, resolveUsages, UsageHierarchy } from './usage_lookup_logic';
 import { isInsideComment, isInsideDocLink } from './text_scan_logic';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
@@ -68,8 +68,8 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		}
 
 		const word = document.getText(wordRange);
-		const declLine = wordRange.start.line;
-		const target = findDeclarationTarget(document.getText(), document.uri.fsPath, declLine, word, wordRange.start.character);
+		const wordPosition = { sourcePath: document.uri.fsPath, line: wordRange.start.line, column: wordRange.start.character };
+		const target = findDeclarationTarget(document.getText(), document.uri.fsPath, wordPosition.line, word, wordPosition.column);
 		if (!target) {
 			const targets = resolveDefinitions({
 				documentText: document.getText(),
@@ -83,27 +83,13 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 				classStore: this.classStore,
 				artifactIndex: this.artifactIndex
 			});
-			const meaningfulTargets = targets.filter(candidate => !(candidate.uri === document.uri.fsPath && candidate.line === declLine));
-			return toLocations(meaningfulTargets);
+			return toLocations(excludePosition(targets, wordPosition));
 		}
 
 		const resolution = resolveUsages(target, this.callSiteIndex, 'navigate', this.hierarchy);
-		let occurrences = resolution.records.map(callSiteToLocation);
-		for (const scan of resolution.textScans) {
-			if (occurrences.length > 0) {
-				break;
-			}
-			occurrences = await findWordOccurrences(word, scan.receiverFieldName, token, scan.files);
-		}
-		const declUri = document.uri.toString();
-		const usages = occurrences.filter(location => !(location.uri.toString() === declUri && location.range.start.line === declLine));
-
+		const usages = (await collectUsageLocations(target, resolution, 'navigate', word, wordScanner(token), wordPosition)).map(toVscodeLocation);
 		if (usages.length === 0) {
-			return toLocations(resolution.superDeclarations.map(declaration => ({
-				uri: declaration.sourcePath,
-				line: declaration.line,
-				column: declaration.column
-			})));
+			return undefined;
 		}
 		return usages.length === 1 ? usages[0] : usages;
 	}

@@ -19,6 +19,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Add Go to Definition (Ctrl+Click / Cmd+Click) for field and property access (`receiver.field`, including `this.field` and property chains such as `card?.brand.code`), resolving the receiver's declared type (local variable, parameter or typed property) from the enclosing document before falling back to the Grails naming convention, and matching only class-level fields and properties (not local variables of the target class)
 - Go to Definition (Ctrl+Click / Cmd+Click) on an enum constant or a static field (`CardBrand.MASTERCARD`, `Limits.MAX_VALUE`) opens that constant or field, and on an enum constant's own declaration opens the constructor it calls (matched by argument count), or the enum itself when it has no constructor, like IntelliJ
 - Do not offer Go to Definition (Ctrl+Click / Cmd+Click) on words inside `//` and `/* */` comments, except `{@link ...}` references in Groovydoc
+- Go to Definition (Ctrl+Click / Cmd+Click) on a constant of a one-line enum (`enum Kind { A, B }`) opens the enum, a constructor declared without modifiers (`WidgetKind(String code)`) is treated as a declaration of its class, enum constants after a constant body or closure argument on the same line (`PLUS { ... }, MINUS`) are recognized, and a recursive call on the declaration line (`n * fact(n - 1)`) is kept as a usage
+- Class usages highlight the receiver (`Widget.get(1)`, `widgetService.rename()`) instead of the called method, and slashy strings (`~/^\/api\/*$/`) no longer hide the rest of the file from the index or from comment detection
 
 ## [0.2.3] - 2026-09-28
 - Internal: add CI, contribution guidelines and automated release workflow (no functional changes)

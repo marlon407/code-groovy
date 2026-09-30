@@ -46,6 +46,26 @@ suite('isInsideComment', () => {
 	});
 });
 
+suite('isInsideComment — strings the scanner shares with maskNonCode', () => {
+	test('does not end a string early at a quote inside GString interpolation', () => {
+		const text = 'def a = "${ "x" } // Bank"\nBank.get(1)';
+		assert.strictEqual(isInsideComment(text, offsetOf(text, 'Bank')), false);
+		assert.strictEqual(isInsideComment(text, offsetOf(text, 'Bank', 1)), false);
+	});
+
+	test('does not open a block comment at /* inside a slashy string', () => {
+		const text = 'def pattern = ~/^\\/api\\/*$/\nBank.get(1)\n/* Bank */';
+		assert.strictEqual(isInsideComment(text, offsetOf(text, 'Bank')), false);
+		assert.strictEqual(isInsideComment(text, offsetOf(text, 'Bank', 1)), true);
+	});
+
+	test('still reads division followed by a comment as code', () => {
+		const text = 'def ratio = total / count /* Bank */\nBank.get(1)';
+		assert.strictEqual(isInsideComment(text, offsetOf(text, 'Bank')), true);
+		assert.strictEqual(isInsideComment(text, offsetOf(text, 'Bank', 1)), false);
+	});
+});
+
 suite('isInsideDocLink', () => {
 	test('flags the class name inside {@link ...}', () => {
 		const line = ' * Delegates to {@link BankRepository} for lookups';
@@ -95,6 +115,22 @@ suite('maskNonCode', () => {
 		const masked = maskNonCode(`"don't" + widgetService.activate(w) + 'a\\'' + other.run()`);
 		assert.ok(masked.includes('widgetService.activate(w)'));
 		assert.ok(masked.includes('other.run()'));
+	});
+});
+
+suite('maskNonCode — slashy strings', () => {
+	test('blanks a slashy regex after ~, = or ( and keeps the code after it', () => {
+		const text = 'def a = ~/x\\/*y/\nfoo(/b\\d+/)\nbar()';
+		const masked = maskNonCode(text);
+		assert.ok(!masked.includes('x'));
+		assert.ok(!masked.includes('b\\d'));
+		assert.ok(masked.includes('foo('));
+		assert.ok(masked.includes('bar()'));
+	});
+
+	test('keeps division as code', () => {
+		const text = 'def half = total / 2\ndef third = (a + b) / 3';
+		assert.strictEqual(maskNonCode(text), text);
 	});
 });
 
