@@ -28,6 +28,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Read class headers split across lines or with annotations on the same line, members declared on the same line as a one-line class or enum, method pointers (`service.&method`), qualified constructor calls (`new com.acme.Widget()`), `var` declarations, dollar-slashy strings and slashy strings after `in`, `case`, `*` and `+`
 - Update the index incrementally on save (only the changed files' entries), discover source files without blocking the editor, and parse each document once per request; F2 rename now skips slashy strings and renames inside GString interpolation
 
+## [0.2.4] - 2026-10-02
+- Publish the extension to [Open VSX](https://open-vsx.org/extension/marlon407/code-groovy) (no functional changes)
+
 ## [0.2.3] - 2026-09-28
 - Internal: add CI, contribution guidelines and automated release workflow (no functional changes)
 
