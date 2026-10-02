@@ -5,6 +5,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-02
+- Publish the extension to [Open VSX](https://open-vsx.org/extension/marlon407/code-groovy) (no functional changes)
+
 ## [0.2.3] - 2026-09-28
 - Internal: add CI, contribution guidelines and automated release workflow (no functional changes)
 
